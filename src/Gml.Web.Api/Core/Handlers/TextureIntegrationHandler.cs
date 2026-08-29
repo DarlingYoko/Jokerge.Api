@@ -101,8 +101,6 @@ public class TextureIntegrationHandler : ITextureIntegrationHandler
                 HttpStatusCode.BadRequest));
         }
 
-        await skinServiceManager.UpdateSkin(user, texture);
-
         return await skinServiceManager.UpdateSkin(user, texture)
             ? Results.Ok(ResponseMessage.Create("Скин успешно установлен!", HttpStatusCode.OK))
             : Results.BadRequest(ResponseMessage.Create("Не удалось обновить скин!", HttpStatusCode.BadRequest));
@@ -114,7 +112,7 @@ public class TextureIntegrationHandler : ITextureIntegrationHandler
         IGmlManager gmlManager)
     {
         var login = context.Request.Form["Login"].FirstOrDefault();
-        var token = context.Request.Headers.Authorization.FirstOrDefault()?.Split(' ').FirstOrDefault();
+        var token = context.Request.Headers.Authorization.FirstOrDefault()?.Split(' ').LastOrDefault();
 
         if (string.IsNullOrEmpty(login))
         {
