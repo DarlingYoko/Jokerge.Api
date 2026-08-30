@@ -93,8 +93,6 @@ public class GitHubLauncherHub(IGitHubService gitHubService, IGmlManager gmlMana
                 else
                     await gmlManager.Notifications.SendMessage("Сборка лаунчера завершилась ошибкой!",
                         NotificationType.Error);
-
-                await Clients.Caller.SendAsync("LauncherBuildEnded");
             }
         }
         catch (Exception exception)
@@ -106,6 +104,7 @@ public class GitHubLauncherHub(IGitHubService gitHubService, IGmlManager gmlMana
         {
             downloadLogsDisposable?.Dispose();
             buildLogsDisposable?.Dispose();
+            await Clients.Caller.SendAsync("LauncherBuildEnded");
         }
     }
 }
