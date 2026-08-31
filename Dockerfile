@@ -9,6 +9,7 @@ USER $APP_UID
 FROM mcr.microsoft.com/dotnet/sdk:10.0 AS build
 ARG BUILD_CONFIGURATION=Release
 WORKDIR /src
+COPY --from=core . /Jokerge.Core
 COPY ["src/Gml.Web.Api/Gml.Web.Api.csproj", "src/Gml.Web.Api/"]
 COPY ["src/plugins/Gml.Web.Api.EndpointSDK/Gml.Web.Api.EndpointSDK.csproj", "src/plugins/Gml.Web.Api.EndpointSDK/"]
 RUN dotnet restore "src/Gml.Web.Api/Gml.Web.Api.csproj"

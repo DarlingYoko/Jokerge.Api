@@ -55,13 +55,25 @@ public class AuthIntegrationHandler : IAuthIntegrationHandler
 
         await gmlManager.Profiles.CreateUserSessionAsync(null, player, host);
 
-        // player.TextureSkinUrl = (await gmlManager.Integrations.GetSkinServiceAsync())
-        //     .Replace("{userName}", player.Name)
-        //     .Replace("{userUuid}", player.Uuid);
-        //
-        // player.TextureCloakUrl = (await gmlManager.Integrations.GetCloakServiceAsync())
-        //     .Replace("{userName}", player.Name)
-        //     .Replace("{userUuid}", player.Uuid);
+        if (string.IsNullOrEmpty(player.TextureSkinGuid) || string.IsNullOrEmpty(player.TextureCloakGuid))
+        {
+            var texture = await gmlManager.Integrations.TextureProvider.GetUserTexture(player.Name);
+
+            if (string.IsNullOrEmpty(player.TextureSkinGuid) && !string.IsNullOrEmpty(texture.SkinUrl))
+            {
+                player.TextureSkinUrl = texture.SkinUrl;
+                player.TextureSkinGuid = Guid.NewGuid().ToString();
+            }
+
+            if (string.IsNullOrEmpty(player.TextureCloakGuid) && texture.HasCloak &&
+                !string.IsNullOrEmpty(texture.CloakUrl))
+            {
+                player.TextureCloakUrl = texture.CloakUrl;
+                player.TextureCloakGuid = Guid.NewGuid().ToString();
+            }
+
+            await gmlManager.Users.UpdateUser(player);
+        }
 
         return Results.Ok(ResponseMessage.Create(
             mapper.Map<PlayerReadDto>(player),
