@@ -101,9 +101,16 @@ public class TextureIntegrationHandler : ITextureIntegrationHandler
                 HttpStatusCode.BadRequest));
         }
 
-        return await skinServiceManager.UpdateSkin(user, texture)
-            ? Results.Ok(ResponseMessage.Create("Скин успешно установлен!", HttpStatusCode.OK))
-            : Results.BadRequest(ResponseMessage.Create("Не удалось обновить скин!", HttpStatusCode.BadRequest));
+        var skinUrl = await skinServiceManager.UpdateSkin(user, texture);
+
+        if (string.IsNullOrEmpty(skinUrl))
+            return Results.BadRequest(ResponseMessage.Create("Не удалось обновить скин!", HttpStatusCode.BadRequest));
+
+        user.TextureSkinUrl = skinUrl;
+        user.TextureSkinGuid = Guid.NewGuid().ToString();
+        await gmlManager.Users.UpdateUser(user);
+
+        return Results.Ok(ResponseMessage.Create("Скин успешно установлен!", HttpStatusCode.OK));
     }
 
     public static async Task<IResult> UpdateUserCloak(
@@ -137,9 +144,16 @@ public class TextureIntegrationHandler : ITextureIntegrationHandler
                 HttpStatusCode.BadRequest));
         }
 
-        return await skinServiceManager.UpdateCloak(user, texture)
-            ? Results.Ok(ResponseMessage.Create("Плащ успешно установлен!", HttpStatusCode.OK))
-            : Results.BadRequest(ResponseMessage.Create("Не удалось обновить плащ!", HttpStatusCode.BadRequest));
+        var cloakUrl = await skinServiceManager.UpdateCloak(user, texture);
+
+        if (string.IsNullOrEmpty(cloakUrl))
+            return Results.BadRequest(ResponseMessage.Create("Не удалось обновить плащ!", HttpStatusCode.BadRequest));
+
+        user.TextureCloakUrl = cloakUrl;
+        user.TextureCloakGuid = Guid.NewGuid().ToString();
+        await gmlManager.Users.UpdateUser(user);
+
+        return Results.Ok(ResponseMessage.Create("Плащ успешно установлен!", HttpStatusCode.OK));
     }
 
     public static async Task<IResult> GetUserSkin(IGmlManager gmlManager, string textureGuid)

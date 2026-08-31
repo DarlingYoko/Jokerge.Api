@@ -1,6 +1,8 @@
 using System.Net.Http.Headers;
+using Gml.Common.TextureService;
 using Gml.Models.User;
 using Gml.Web.Api.Core.Options;
+using Newtonsoft.Json;
 
 namespace Gml.Web.Api.Core.Services;
 
@@ -8,7 +10,7 @@ public class SkinServiceManager(IHttpClientFactory httpClientFactory) : ISkinSer
 {
     private HttpClient _skinServiceClient = httpClientFactory.CreateClient(HttpClientNames.SkinService);
 
-    public async Task<bool> UpdateSkin(AuthUser authUser, Stream texture)
+    public async Task<string?> UpdateSkin(AuthUser authUser, Stream texture)
     {
         var content = new MultipartFormDataContent();
 
@@ -23,10 +25,15 @@ public class SkinServiceManager(IHttpClientFactory httpClientFactory) : ISkinSer
 
         var request = await _skinServiceClient.PostAsync($"/skin/{authUser.Name}", content);
 
-        return request.IsSuccessStatusCode;
+        if (!request.IsSuccessStatusCode)
+            return null;
+
+        var data = await request.Content.ReadAsStringAsync();
+
+        return JsonConvert.DeserializeObject<TextureReadDto>(data)?.SkinUrl;
     }
 
-    public async Task<bool> UpdateCloak(AuthUser authUser, Stream texture)
+    public async Task<string?> UpdateCloak(AuthUser authUser, Stream texture)
     {
         var content = new MultipartFormDataContent();
 
@@ -41,12 +48,17 @@ public class SkinServiceManager(IHttpClientFactory httpClientFactory) : ISkinSer
 
         var request = await _skinServiceClient.PostAsync($"/cloak/{authUser.Name}", content);
 
-        return request.IsSuccessStatusCode;
+        if (!request.IsSuccessStatusCode)
+            return null;
+
+        var data = await request.Content.ReadAsStringAsync();
+
+        return JsonConvert.DeserializeObject<TextureReadDto>(data)?.ClockUrl;
     }
 }
 
 public interface ISkinServiceManager
 {
-    Task<bool> UpdateSkin(AuthUser authUser, Stream texture);
-    Task<bool> UpdateCloak(AuthUser authUser, Stream texture);
+    Task<string?> UpdateSkin(AuthUser authUser, Stream texture);
+    Task<string?> UpdateCloak(AuthUser authUser, Stream texture);
 }
