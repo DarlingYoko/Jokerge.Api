@@ -8,8 +8,7 @@ public class DiscordRpcValidator : AbstractValidator<DiscordRpcUpdateDto>
     public DiscordRpcValidator()
     {
         RuleFor(x => x.ClientId)
-            .NotEmpty().WithMessage("ClientId обязателен для заполнения")
-            .Length(1, 32).WithMessage("ClientId должен содержать от 1 до 32 символов");
+            .MaximumLength(32).WithMessage("ClientId должен содержать не более 32 символов");
 
         RuleFor(x => x.Details)
             .MaximumLength(128).WithMessage("Details не может быть длинее 128 символов");
