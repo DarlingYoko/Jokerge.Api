@@ -78,9 +78,11 @@ public class MinecraftHandler : IMinecraftHandler
             !await gmlManager.Users.CanJoinToServer(user, serverId))
             return Results.NoContent();
 
+        var undashedUuid = user.Uuid.Replace("-", string.Empty).ToLower();
+
         var profile = new Profile
         {
-            Id = user.Uuid,
+            Id = undashedUuid,
             Name = user.Name,
             Properties = []
         };
@@ -96,7 +98,7 @@ public class MinecraftHandler : IMinecraftHandler
         {
             Timestamp = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds(),
             ProfileName = user.Name,
-            ProfileId = user.Uuid,
+            ProfileId = undashedUuid,
             Textures = new Textures
             {
                 Skin = !string.IsNullOrEmpty(user.TextureSkinGuid)
@@ -175,9 +177,11 @@ public class MinecraftHandler : IMinecraftHandler
 
         if (user is null || string.IsNullOrEmpty(guidUuid) || user.IsBanned) return Results.NoContent();
 
+        var undashedUuid = guid.ToString().Replace("-", string.Empty).ToLower();
+
         var profile = new Profile
         {
-            Id = uuid,
+            Id = undashedUuid,
             Name = user.Name,
             Properties = []
         };
@@ -193,7 +197,7 @@ public class MinecraftHandler : IMinecraftHandler
         {
             Timestamp = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds(),
             ProfileName = user.Name,
-            ProfileId = uuid,
+            ProfileId = undashedUuid,
             SignatureRequired = !unsigned,
             Textures = new Textures
             {
