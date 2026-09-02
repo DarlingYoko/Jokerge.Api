@@ -94,6 +94,12 @@ public class SystemService : ISystemService
     private static readonly string publicKeyPath = "public.key";
     private static readonly string privateKeyPath = "private.key";
 
+    // Guards first-time key generation: without this, concurrent requests arriving before the key
+    // pair exists (e.g. several session/profile lookups on a fresh deployment) each spawn their own
+    // openssl processes writing to the same private.key/public.key, racing each other and producing
+    // a truncated/corrupt PEM that then fails to import.
+    private static readonly SemaphoreSlim KeyGenLock = new(1, 1);
+
     public async Task<string> GetPublicKey()
     {
         return await ReadKeyFile(publicKeyPath);
@@ -129,7 +135,19 @@ public class SystemService : ISystemService
 
     private async Task<string> ReadKeyFile(string path)
     {
-        if (!File.Exists(path)) GenerateKeyPair();
+        if (!File.Exists(path))
+        {
+            await KeyGenLock.WaitAsync();
+            try
+            {
+                // Re-check: another caller may have generated the pair while we waited for the lock.
+                if (!File.Exists(path)) GenerateKeyPair();
+            }
+            finally
+            {
+                KeyGenLock.Release();
+            }
+        }
 
         using var reader = new StreamReader(path);
 
