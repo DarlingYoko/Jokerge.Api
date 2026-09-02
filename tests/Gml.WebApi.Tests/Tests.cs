@@ -4,6 +4,7 @@ using Faker;
 using Gml.Domains.LauncherDto;
 using Gml.Dto.Integration;
 using Gml.Dto.Launcher;
+using Gml.Dto.Marketplace;
 using Gml.Dto.Messages;
 using Gml.Dto.Minecraft.AuthLib;
 using Gml.Dto.Player;
@@ -12,9 +13,11 @@ using Gml.Dto.Settings;
 using Gml.Dto.Texture;
 using Gml.Dto.User;
 using Gml.Models.Auth;
+using Gml.Web.Api.Core.Services;
 using Gml.Web.Api.Domains.System;
 using GmlCore.Interfaces.Enums;
 using Microsoft.AspNetCore.Mvc.Testing;
+using Microsoft.Extensions.DependencyInjection;
 using Newtonsoft.Json;
 
 namespace Gml.WebApi.Tests;
@@ -886,9 +889,48 @@ public class Tests
     [Order(54)]
     public async Task RemovePlugin()
     {
-        var response = await _httpClient.DeleteAsync("/api/v1/plugins/{name}/{version}");
+        // PluginsService is a singleton, so the instance resolved here is the exact one the running
+        // app serves HTTP requests with (WebApplicationFactory hosts the app in-process).
+        var pluginsService = _webApplicationFactory.Services.GetRequiredService<PluginsService>();
 
-        Assert.Multiple(() => { Assert.That(response.IsSuccessStatusCode, Is.True); });
+        // Seed a real, on-disk plugin fixture the same way a genuine install (or app restart via
+        // PluginsService.RestorePlugins) would produce it — installing for real requires a live
+        // RecloudID marketplace token, which isn't available in tests.
+        var pluginId = Guid.NewGuid();
+        var pluginsDirectory = Path.Combine(
+            Path.GetDirectoryName(Environment.ProcessPath ?? AppDomain.CurrentDomain.BaseDirectory)!,
+            "plugins");
+        var pluginDirectory = Path.Combine(pluginsDirectory, pluginId.ToString());
+        Directory.CreateDirectory(pluginDirectory);
+
+        var product = new ProductReadDto
+        {
+            Id = pluginId,
+            Name = "UnitTestPlugin",
+            Description = "Fixture plugin created by the RemovePlugin test",
+            ProjectLink = "https://example.com",
+            ImageUrl = "https://example.com/icon.png",
+            IsFree = true,
+            Price = 0,
+            Categories = []
+        };
+
+        await File.WriteAllTextAsync(Path.Combine(pluginDirectory, "product.json"),
+            JsonConvert.SerializeObject(product));
+
+        pluginsService.RestorePlugins();
+
+        Assert.That(pluginsService.Products.ContainsKey(pluginId.ToString()), Is.True,
+            "Fixture setup failed: plugin was not registered before removal was attempted");
+
+        var response = await _httpClient.DeleteAsync($"/api/v1/plugins/{pluginId}");
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(response.IsSuccessStatusCode, Is.True);
+            Assert.That(pluginsService.Products.ContainsKey(pluginId.ToString()), Is.False);
+            Assert.That(Directory.Exists(pluginDirectory), Is.False);
+        });
     }
 #endif
 
