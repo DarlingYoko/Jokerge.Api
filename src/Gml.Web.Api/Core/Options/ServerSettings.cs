@@ -13,6 +13,7 @@ public class ServerSettings
     public int RefreshTokenDays { get; set; } = 30;
     public string ProjectVersion { get; set; } = null!;
     public string[] SkinDomains { get; set; } = [];
+    public string[] ClientOrigins { get; set; } = [];
 
     [JsonProperty(nameof(ProjectDescription))]
     public string? ProjectDescription { get; set; }

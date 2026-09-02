@@ -13,11 +13,35 @@ using Gml.Web.Api.Data;
 using GmlCore.Interfaces;
 using GmlCore.Interfaces.Auth;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Caching.Memory;
 
 namespace Gml.Web.Api.Core.Handlers;
 
 public class AuthHandler : IAuthHandler
 {
+    // Absolute grace window during which a refresh token that was just rotated out can still be
+    // presented once more (e.g. by a second concurrent tab/request) without forcing a full re-login.
+    private static readonly TimeSpan RefreshReuseGraceWindow = TimeSpan.FromSeconds(10);
+
+    private sealed record CachedRefresh(AuthTokensDto Tokens, string RefreshToken, DateTime ExpiresAtUtc);
+
+    private static CookieOptions BuildRefreshCookieOptions(HttpContext httpContext, DateTime? expiresAtUtc = null)
+    {
+        var isHttps = httpContext.Request.IsHttps;
+
+        return new CookieOptions
+        {
+            HttpOnly = true,
+            // "Secure" cookies are refused by browsers on a non-HTTPS origin, and SameSite=None requires
+            // Secure — so on plain-HTTP self-hosted deployments the cookie must fall back to Lax or it is
+            // silently never stored, breaking silent refresh right after a successful login.
+            Secure = isHttps,
+            SameSite = isHttps ? SameSiteMode.None : SameSiteMode.Lax,
+            Path = "/",
+            Expires = expiresAtUtc
+        };
+    }
+
     public static async Task<IResult> Logout(
         HttpContext httpContext,
         IAccessTokenService tokenService,
@@ -34,13 +58,7 @@ public class AuthHandler : IAuthHandler
             }
         }
 
-        httpContext.Response.Cookies.Delete("refreshToken", new CookieOptions
-        {
-            HttpOnly = true,
-            Secure = true,
-            SameSite = SameSiteMode.None,
-            Path = "/"
-        });
+        httpContext.Response.Cookies.Delete("refreshToken", BuildRefreshCookieOptions(httpContext));
 
         return Results.Ok(ResponseMessage.Create("Вы вышли из системы", HttpStatusCode.OK));
     }
@@ -125,14 +143,7 @@ public class AuthHandler : IAuthHandler
         var expiresAt = DateTime.UtcNow.AddDays(settings.RefreshTokenDays);
         await refreshRepo.CreateAsync(user.Id, refreshHash, expiresAt);
 
-        var cookieOptions = new CookieOptions
-        {
-            HttpOnly = true,
-            Secure = true,
-            SameSite = SameSiteMode.None,
-            Expires = expiresAt
-        };
-        httpContext.Response.Cookies.Append("refreshToken", refreshToken, cookieOptions);
+        httpContext.Response.Cookies.Append("refreshToken", refreshToken, BuildRefreshCookieOptions(httpContext, expiresAt));
 
         var tokens = new AuthTokensDto
         {
@@ -193,14 +204,7 @@ public class AuthHandler : IAuthHandler
         var expiresAt = DateTime.UtcNow.AddDays(settings.RefreshTokenDays);
         await refreshRepo.CreateAsync(user.Id, refreshHash, expiresAt);
 
-        var cookieOptions = new CookieOptions
-        {
-            HttpOnly = true,
-            Secure = true,
-            SameSite = SameSiteMode.None,
-            Expires = expiresAt
-        };
-        httpContext.Response.Cookies.Append("refreshToken", refreshToken, cookieOptions);
+        httpContext.Response.Cookies.Append("refreshToken", refreshToken, BuildRefreshCookieOptions(httpContext, expiresAt));
 
         var tokens = new AuthTokensDto
         {
@@ -217,19 +221,34 @@ public class AuthHandler : IAuthHandler
         IAccessTokenService tokenService,
         IRefreshTokenRepository refreshRepo,
         ServerSettings settings,
-        DatabaseContext db)
+        DatabaseContext db,
+        IMemoryCache cache)
     {
         var refreshToken = httpContext.Request.Cookies["refreshToken"];
         if (string.IsNullOrWhiteSpace(refreshToken))
             return Results.Unauthorized();
 
         var hash = tokenService.HashRefreshToken(refreshToken);
+        var cacheKey = $"refresh-reuse:{hash}";
+
         var stored = await refreshRepo.FindActiveByHashAsync(hash);
         if (stored is null)
-            return Results.Unauthorized();
+        {
+            // The token may have just been rotated out by a concurrent request for the same session
+            // (multiple tabs, or the client racing its own refresh call). Rather than forcing a full
+            // re-login, replay the pair that request already issued if we're still inside the grace window.
+            if (cache.TryGetValue(cacheKey, out CachedRefresh? cached) && cached is not null)
+            {
+                httpContext.Response.Cookies.Append("refreshToken", cached.RefreshToken,
+                    BuildRefreshCookieOptions(httpContext, cached.ExpiresAtUtc));
 
-        // Revoke old token (rotation)
-        await refreshRepo.RevokeAsync(stored.UserId, stored.TokenHash);
+                return Results.Ok(ResponseMessage.Create(cached.Tokens, "Токены обновлены", HttpStatusCode.OK));
+            }
+
+            return Results.Unauthorized();
+        }
+
+        var storedUser = await db.Users.FirstOrDefaultAsync(u => u.Id == stored.UserId);
 
         // Issue new pair
         var rolesRefresh = await db.UserRoles.Where(ur => ur.UserId == stored.UserId).Select(ur => ur.Role.Name)
@@ -240,26 +259,27 @@ public class AuthHandler : IAuthHandler
             .Select(rp => rp.Permission.Name)
             .Distinct()
             .ToListAsync();
-        var newAccess = tokenService.GenerateAccessToken(stored.UserId, null, null, rolesRefresh, permsRefresh);
+        var newAccess = tokenService.GenerateAccessToken(stored.UserId, storedUser?.Login, storedUser?.Email,
+            rolesRefresh, permsRefresh);
         var newRefresh = tokenService.GenerateRefreshToken();
         var newHash = tokenService.HashRefreshToken(newRefresh);
         var expiresAt = DateTime.UtcNow.AddDays(settings.RefreshTokenDays);
         await refreshRepo.CreateAsync(stored.UserId, newHash, expiresAt);
-
-        var cookieOptions = new CookieOptions
-        {
-            HttpOnly = true,
-            Secure = true,
-            SameSite = SameSiteMode.None,
-            Expires = expiresAt
-        };
-        httpContext.Response.Cookies.Append("refreshToken", newRefresh, cookieOptions);
 
         var tokens = new AuthTokensDto
         {
             AccessToken = newAccess,
             ExpiresIn = settings.AccessTokenMinutes * 60
         };
+
+        // Publish before revoking so a request racing this one can find it as soon as the old token
+        // stops being "active", instead of hitting the Unauthorized path above.
+        cache.Set(cacheKey, new CachedRefresh(tokens, newRefresh, expiresAt), RefreshReuseGraceWindow);
+
+        // Revoke old token (rotation)
+        await refreshRepo.RevokeAsync(stored.UserId, stored.TokenHash);
+
+        httpContext.Response.Cookies.Append("refreshToken", newRefresh, BuildRefreshCookieOptions(httpContext, expiresAt));
 
         return Results.Ok(ResponseMessage.Create(tokens, "Токены обновлены", HttpStatusCode.OK));
     }

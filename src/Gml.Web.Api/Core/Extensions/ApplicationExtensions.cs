@@ -32,7 +32,7 @@ public static class ApplicationExtensions
 
         app.UseAuthentication();
         app.UseAuthorization();
-        // app.UseRateLimiter();
+        app.UseRateLimiter();
 
         app.RegisterEndpoints()
             .UseCors(_policyName)
@@ -74,6 +74,11 @@ public static class ApplicationExtensions
         var marketEndpoint = GetEnvironmentVariable("MARKET_ENDPOINT");
         var projectDescription = GetEnvironmentVariable("PROJECT_DESCRIPTION");
         var policyName = GetEnvironmentVariable("PROJECT_POLICYNAME");
+        var clientOriginRaw = GetEnvironmentVariable("PROJECT_CLIENT_ORIGIN");
+        var clientOrigins = clientOriginRaw
+            .Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+        if (clientOrigins.Length == 0)
+            clientOrigins = ["http://localhost:3001"];
         var projectPath = GetEnvironmentVariable("PROJECT_PATH");
         var securityKey = GetEnvironmentVariable("SECURITY_KEY");
         var swaggerEnabled = bool.TryParse(GetEnvironmentVariable("SWAGGER_ENABLED"), out var isEnabled) && isEnabled;
@@ -98,6 +103,7 @@ public static class ApplicationExtensions
             ProjectDescription = projectDescription,
             ProjectName = projectName,
             PolicyName = policyName,
+            ClientOrigins = clientOrigins,
             MarketEndpoint = marketEndpoint,
             IsEnabledApiDocs = swaggerEnabled,
             ProjectVersion = "1.1.0",
@@ -207,7 +213,7 @@ public static class ApplicationExtensions
             .AddTransient<AnyAuthService>()
             .RegisterRepositories()
             .RegisterValidators()
-            .RegisterCors(settings.PolicyName)
+            .RegisterCors(settings.PolicyName, settings.ClientOrigins)
             .AddSignalR();
 
         builder.Services.AddAuthorization();

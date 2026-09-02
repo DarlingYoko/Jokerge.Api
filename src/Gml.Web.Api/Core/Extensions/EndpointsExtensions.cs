@@ -118,6 +118,7 @@ public static class EndpointsExtensions
             .WithDescription("Авторизация")
             .WithName("Authenticate User")
             .WithTags("Users")
+            .RequireRateLimiting(RateLimitExtension.AuthPolicy)
             .Produces<ResponseMessage<UserAuthReadDto>>()
             .Produces<ResponseMessage>((int)HttpStatusCode.BadRequest);
 
@@ -130,6 +131,7 @@ public static class EndpointsExtensions
             .WithDescription("Перевыпуск access токена и rotation refresh токена")
             .WithName("Refresh tokens")
             .WithTags("Users")
+            .RequireRateLimiting(RateLimitExtension.AuthPolicy)
             .Produces<ResponseMessage<AuthTokensDto>>()
             .Produces<ResponseMessage>((int)HttpStatusCode.Unauthorized);
 

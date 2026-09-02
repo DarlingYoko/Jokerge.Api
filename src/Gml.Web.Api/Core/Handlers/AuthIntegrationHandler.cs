@@ -131,6 +131,9 @@ public class AuthIntegrationHandler : IAuthIntegrationHandler
 
             if (authResult.TwoFactorEnabled && string.IsNullOrEmpty(authDto.TwoFactorCode))
             {
+                // Structured signal for clients, independent of this message's (localized) wording.
+                context.Response.Headers["X-Requires-2FA"] = "true";
+
                 return Results.BadRequest(ResponseMessage.Create(
                     "Введите код из приложения 2FA",
                     HttpStatusCode.Unauthorized));
