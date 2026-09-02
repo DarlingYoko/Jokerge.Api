@@ -107,6 +107,8 @@ public class Tests
 #if DEBUG
     [Test]
     [Order(3)]
+    [Explicit("Downloads and installs a real Forge distribution over the network — not faked by " +
+              "FakeForgeHttpHandler on purpose. Run explicitly when verifying the real install path.")]
     public async Task RestoreProfile()
     {
         var restoreDto = TestHelper.CreateJsonObject(new ProfileRestoreDto
