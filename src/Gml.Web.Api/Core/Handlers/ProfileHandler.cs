@@ -24,6 +24,12 @@ namespace Gml.Web.Api.Core.Handlers;
 
 public class ProfileHandler : IProfileHandler
 {
+    // Behind the reverse proxy, context.Request.Scheme is the scheme the proxy used to reach this
+    // app (plain http), not the scheme the browser used to reach the proxy — using it directly here
+    // produced http:// background-image URLs on an https:// site (browser-blocked mixed content).
+    private static string GetPublicScheme(HttpContext context) =>
+        context.Request.Headers["X-Forwarded-Scheme"].FirstOrDefault() ?? context.Request.Scheme;
+
     public static async Task<IResult> GetProfiles(
         HttpContext context,
         IMapper mapper,
@@ -68,7 +74,7 @@ public class ProfileHandler : IProfileHandler
             var originalProfile = gameProfiles.First(c => c.Name == profile.Name);
             var hostValue = context.Request.Headers["X-Forwarded-Host"].FirstOrDefault() ?? context.Request.Host.Value;
             profile.Background =
-                $"{context.Request.Scheme}://{hostValue}/api/v1/file/{originalProfile.BackgroundImageKey}";
+                $"{GetPublicScheme(context)}://{hostValue}/api/v1/file/{originalProfile.BackgroundImageKey}";
         }
 
         return Results.Ok(ResponseMessage.Create(dtoProfiles.OrderByDescending(c => c.Priority), string.Empty,
@@ -245,7 +251,7 @@ public class ProfileHandler : IProfileHandler
 
         var newProfile = mapper.Map<ProfileReadDto>(profile);
         var hostValue = context.Request.Headers["X-Forwarded-Host"].FirstOrDefault() ?? context.Request.Host.Value;
-        newProfile.Background = $"{context.Request.Scheme}://{hostValue}/api/v1/file/{profile.BackgroundImageKey}";
+        newProfile.Background = $"{GetPublicScheme(context)}://{hostValue}/api/v1/file/{profile.BackgroundImageKey}";
 
         var message = $"""Профиль "{updateDto.Name}" успешно обновлен""";
 
@@ -367,7 +373,7 @@ public class ProfileHandler : IProfileHandler
         var profileDto = mapper.Map<ProfileReadInfoDto>(profileInfo);
 
         var hostValue = context.Request.Headers["X-Forwarded-Host"].FirstOrDefault() ?? context.Request.Host.Value;
-        profileDto.Background = $"{context.Request.Scheme}://{hostValue}/api/v1/file/{profile.BackgroundImageKey}";
+        profileDto.Background = $"{GetPublicScheme(context)}://{hostValue}/api/v1/file/{profile.BackgroundImageKey}";
 
         return Results.Ok(ResponseMessage.Create(profileDto, string.Empty, HttpStatusCode.OK));
     }
@@ -474,7 +480,7 @@ public class ProfileHandler : IProfileHandler
 
         var hostValue = context.Request.Headers["X-Forwarded-Host"].FirstOrDefault() ?? context.Request.Host.Value;
         profileDto.Background = profile.BackgroundImageKey is not null
-            ? $"{context.Request.Scheme}://{hostValue}/api/v1/file/{profile.BackgroundImageKey}"
+            ? $"{GetPublicScheme(context)}://{hostValue}/api/v1/file/{profile.BackgroundImageKey}"
             : profile.BackgroundImageKey;
         profileDto.IsEnabled = profile.IsEnabled;
         profileDto.Priority = profile.Priority;
