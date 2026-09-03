@@ -994,6 +994,11 @@ public static class EndpointsExtensions
             .WithDescription("Получение файла на загрузку")
             .WithName("Download file")
             .WithTags("Files")
+            // A single install/update can need far more requests than the GlobalLimiter's per-minute
+            // budget (shared by every other endpoint) allows, since launcher clients fetch many files
+            // concurrently — opt out of it and use a concurrency-based limit suited to downloads instead.
+            .DisableRateLimiting()
+            .RequireRateLimiting(RateLimitExtension.DownloadPolicy)
             .Produces<ResponseMessage>((int)HttpStatusCode.NotFound);
 
         app.MapPost("/api/v1/file/whiteList", FileHandler.AddFileWhiteList)
