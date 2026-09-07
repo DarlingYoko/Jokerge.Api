@@ -157,9 +157,10 @@ public class TextureIntegrationHandler : ITextureIntegrationHandler
         if (!await skinServiceManager.DeleteSkin(user))
             return Results.BadRequest(ResponseMessage.Create("Не удалось сбросить скин!", HttpStatusCode.BadRequest));
 
-        user.TextureSkinUrl = null;
-        user.TextureSkinGuid = null;
-        await gmlManager.Users.UpdateUser(user);
+        // Deliberately don't touch TextureSkinUrl/TextureSkinGuid: that URL is a stable pointer
+        // into the skin service (.../skin/s-{userName}), which re-resolves custom-vs-Mojang on
+        // every request - nulling it here would break the launcher's existing guid-based fetch
+        // until the next login re-populated it.
 
         return Results.Ok(ResponseMessage.Create("Скин сброшен на стандартный!", HttpStatusCode.OK));
     }
@@ -190,9 +191,7 @@ public class TextureIntegrationHandler : ITextureIntegrationHandler
         if (!await skinServiceManager.DeleteCloak(user))
             return Results.BadRequest(ResponseMessage.Create("Не удалось сбросить плащ!", HttpStatusCode.BadRequest));
 
-        user.TextureCloakUrl = null;
-        user.TextureCloakGuid = null;
-        await gmlManager.Users.UpdateUser(user);
+        // Same reasoning as ResetUserSkin: TextureCloakUrl/TextureCloakGuid stay put.
 
         return Results.Ok(ResponseMessage.Create("Плащ успешно удален!", HttpStatusCode.OK));
     }
