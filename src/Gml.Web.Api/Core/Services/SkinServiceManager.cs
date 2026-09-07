@@ -55,10 +55,27 @@ public class SkinServiceManager(IHttpClientFactory httpClientFactory) : ISkinSer
 
         return JsonConvert.DeserializeObject<TextureReadDto>(data)?.ClockUrl;
     }
+
+    public async Task<bool> DeleteSkin(AuthUser authUser)
+    {
+        var request = await _skinServiceClient.DeleteAsync($"/skin/{authUser.Name}");
+
+        // Not found just means there was no custom skin to begin with - already the goal state.
+        return request.IsSuccessStatusCode || request.StatusCode == System.Net.HttpStatusCode.NotFound;
+    }
+
+    public async Task<bool> DeleteCloak(AuthUser authUser)
+    {
+        var request = await _skinServiceClient.DeleteAsync($"/cloak/{authUser.Name}");
+
+        return request.IsSuccessStatusCode || request.StatusCode == System.Net.HttpStatusCode.NotFound;
+    }
 }
 
 public interface ISkinServiceManager
 {
     Task<string?> UpdateSkin(AuthUser authUser, Stream texture);
     Task<string?> UpdateCloak(AuthUser authUser, Stream texture);
+    Task<bool> DeleteSkin(AuthUser authUser);
+    Task<bool> DeleteCloak(AuthUser authUser);
 }

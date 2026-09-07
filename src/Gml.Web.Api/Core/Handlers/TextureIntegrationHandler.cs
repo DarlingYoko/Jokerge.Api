@@ -131,6 +131,72 @@ public class TextureIntegrationHandler : ITextureIntegrationHandler
         return Results.Ok(ResponseMessage.Create("Скин успешно установлен!", HttpStatusCode.OK));
     }
 
+    public static async Task<IResult> ResetUserSkin(
+        HttpContext context,
+        ISkinServiceManager skinServiceManager,
+        IGmlManager gmlManager)
+    {
+        var login = context.Request.Form["Login"].FirstOrDefault();
+        var token = context.Request.Headers.Authorization.FirstOrDefault()?.Split(' ').LastOrDefault();
+
+        if (string.IsNullOrEmpty(login))
+        {
+            return Results.BadRequest(ResponseMessage.Create("Не заполнено обязательное поля \"Login\"",
+                HttpStatusCode.BadRequest));
+        }
+
+        if (await gmlManager.Users.GetUserByName(login) is not AuthUser user
+            || string.IsNullOrEmpty(token)
+            || string.IsNullOrEmpty(user.AccessToken)
+            || !user.AccessToken.Equals(token))
+        {
+            return Results.NotFound(ResponseMessage.Create("Ошибка идентификации",
+                HttpStatusCode.NotFound));
+        }
+
+        if (!await skinServiceManager.DeleteSkin(user))
+            return Results.BadRequest(ResponseMessage.Create("Не удалось сбросить скин!", HttpStatusCode.BadRequest));
+
+        user.TextureSkinUrl = null;
+        user.TextureSkinGuid = null;
+        await gmlManager.Users.UpdateUser(user);
+
+        return Results.Ok(ResponseMessage.Create("Скин сброшен на стандартный!", HttpStatusCode.OK));
+    }
+
+    public static async Task<IResult> ResetUserCloak(
+        HttpContext context,
+        ISkinServiceManager skinServiceManager,
+        IGmlManager gmlManager)
+    {
+        var login = context.Request.Form["Login"].FirstOrDefault();
+        var token = context.Request.Headers.Authorization.FirstOrDefault()?.Split(' ').LastOrDefault();
+
+        if (string.IsNullOrEmpty(login))
+        {
+            return Results.BadRequest(ResponseMessage.Create("Не заполнено обязательное поля \"Login\"",
+                HttpStatusCode.BadRequest));
+        }
+
+        if (await gmlManager.Users.GetUserByName(login) is not AuthUser user
+            || string.IsNullOrEmpty(token)
+            || string.IsNullOrEmpty(user.AccessToken)
+            || !user.AccessToken.Equals(token))
+        {
+            return Results.NotFound(ResponseMessage.Create("Ошибка идентификации",
+                HttpStatusCode.NotFound));
+        }
+
+        if (!await skinServiceManager.DeleteCloak(user))
+            return Results.BadRequest(ResponseMessage.Create("Не удалось сбросить плащ!", HttpStatusCode.BadRequest));
+
+        user.TextureCloakUrl = null;
+        user.TextureCloakGuid = null;
+        await gmlManager.Users.UpdateUser(user);
+
+        return Results.Ok(ResponseMessage.Create("Плащ успешно удален!", HttpStatusCode.OK));
+    }
+
     public static async Task<IResult> UpdateUserCloak(
         HttpContext context,
         ISkinServiceManager skinServiceManager,

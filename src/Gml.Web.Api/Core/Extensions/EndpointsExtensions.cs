@@ -421,6 +421,28 @@ public static class EndpointsExtensions
             .WithTags("Integration/Textures")
             .Produces<ResponseMessage>((int)HttpStatusCode.BadRequest);
 
+        app.MapPost("/api/v1/integrations/texture/skins/reset", TextureIntegrationHandler.ResetUserSkin)
+            .WithOpenApi(generatedOperation =>
+            {
+                generatedOperation.Summary = "Сброс скина пользователя на стандартный (Mojang)";
+                return generatedOperation;
+            })
+            .WithDescription("Сброс скина пользователя на стандартный (Mojang)")
+            .WithName("Reset skin texture")
+            .WithTags("Integration/Textures")
+            .Produces<ResponseMessage>((int)HttpStatusCode.BadRequest);
+
+        app.MapPost("/api/v1/integrations/texture/cloaks/reset", TextureIntegrationHandler.ResetUserCloak)
+            .WithOpenApi(generatedOperation =>
+            {
+                generatedOperation.Summary = "Удаление плаща пользователя";
+                return generatedOperation;
+            })
+            .WithDescription("Удаление плаща пользователя")
+            .WithName("Reset cloak texture")
+            .WithTags("Integration/Textures")
+            .Produces<ResponseMessage>((int)HttpStatusCode.BadRequest);
+
         #endregion
 
         #region Minecraft authlib
