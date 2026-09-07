@@ -5,6 +5,8 @@ using Gml.Dto.Texture;
 using Gml.Models.User;
 using Gml.Web.Api.Core.Services;
 using GmlCore.Interfaces;
+using SixLabors.ImageSharp;
+using SixLabors.ImageSharp.PixelFormats;
 
 namespace Gml.Web.Api.Core.Handlers;
 
@@ -93,13 +95,29 @@ public class TextureIntegrationHandler : ITextureIntegrationHandler
                 HttpStatusCode.NotFound));
         }
 
-        var texture = context.Request.Form.Files["Texture"]?.OpenReadStream();
+        var textureStream = context.Request.Form.Files["Texture"]?.OpenReadStream();
 
-        if (texture is null)
+        if (textureStream is null)
         {
             return Results.BadRequest(ResponseMessage.Create("Не заполнено обязательное поля \"Texture\"",
                 HttpStatusCode.BadRequest));
         }
+
+        using var texture = new MemoryStream();
+        await textureStream.CopyToAsync(texture);
+        texture.Position = 0;
+
+        try
+        {
+            using var skinImage = Image.Load<Rgba32>(texture);
+            user.IsSlim = SkinModelDetector.IsSlimModel(skinImage);
+        }
+        catch (UnknownImageFormatException)
+        {
+            // Falls through to skinServiceManager.UpdateSkin, which will reject the file.
+        }
+
+        texture.Position = 0;
 
         var skinUrl = await skinServiceManager.UpdateSkin(user, texture);
 
