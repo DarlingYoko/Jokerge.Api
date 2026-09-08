@@ -26,6 +26,14 @@ public static class ApplicationExtensions
 {
     private static string _policyName = string.Empty;
 
+    // The exact value shipped in launchSettings.json/README as the local-dev example —
+    // if it ever ends up running a real Production instance, tokens signed with it are
+    // forgeable by anyone who's read the public docs.
+    private static readonly string[] KnownWeakSecurityKeys =
+    {
+        "jkuhbsfgvuk4gfikhn8i7wa34rkbqw23"
+    };
+
     public static WebApplication RegisterServices(this WebApplication app)
     {
         var swaggerEnabled = bool.TryParse(GetEnvironmentVariable("SWAGGER_ENABLED"), out var isEnabled) && isEnabled;
@@ -117,6 +125,28 @@ public static class ApplicationExtensions
         };
     }
 
+    /// <summary>
+    /// Fails startup in Production if SECURITY_KEY is missing, too short, or set to the
+    /// well-known example value shared across this repo's docs/dev config — that key
+    /// signs every JWT the API issues, so a weak/public value forges auth for anyone.
+    /// </summary>
+    private static void ValidateSecurityKey(WebApplicationBuilder builder, string? securityKey)
+    {
+        if (!builder.Environment.IsProduction())
+            return;
+
+        if (string.IsNullOrWhiteSpace(securityKey) ||
+            securityKey.Length < 32 ||
+            KnownWeakSecurityKeys.Contains(securityKey))
+        {
+            throw new InvalidOperationException(
+                "SECURITY_KEY is missing, shorter than 32 characters, or set to the " +
+                "well-known example value from this repo's README/launchSettings.json. " +
+                "Set a real, unique secret via the SECURITY_KEY environment variable " +
+                "before running in Production.");
+        }
+    }
+
     private static WebApplicationBuilder RegisterEndpointsInfo(this WebApplicationBuilder builder,
         string projectName,
         string? projectDescription)
@@ -132,6 +162,8 @@ public static class ApplicationExtensions
         this WebApplicationBuilder builder,
         ServerSettings settings)
     {
+        ValidateSecurityKey(builder, settings.SecurityKey);
+
         var key = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(settings.SecurityKey));
 
         var tokenValidationParameters = new TokenValidationParameters

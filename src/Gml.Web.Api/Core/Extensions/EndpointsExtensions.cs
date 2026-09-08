@@ -554,6 +554,7 @@ public static class EndpointsExtensions
             .WithDescription("Аутентификация через промежуточный сервис авторизации")
             .WithName("Auth")
             .WithTags("Integration/Auth")
+            .RequireRateLimiting(RateLimitExtension.AuthPolicy)
             .Produces<ResponseMessage<PlayerReadDto>>()
             .Produces<ResponseMessage>((int)HttpStatusCode.BadRequest);
 
