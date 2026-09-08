@@ -34,7 +34,7 @@ public class GitHubService : IGitHubService
 
             var branches = JArray.Parse(responseString);
 
-            _versions = branches.Select(c => c["name"].ToString()).ToArray();
+            _branches = branches.Select(c => c["name"].ToString()).ToArray();
         }
 
         return _branches;
@@ -60,42 +60,6 @@ public class GitHubService : IGitHubService
         return _versions;
     }
 
-    // public async Task<string> DownloadProject(string projectPath, string branchName, string repoUrl)
-    // {
-    //
-    //
-    //     var directory = new DirectoryInfo(projectPath);
-    //
-    //     if (!directory.Exists) directory.Create();
-    //
-    //     var zipPath = $"{projectPath}/{branchName}.zip";
-    //     var extractPath = NormalizePath(projectPath, branchName);
-    //
-    //     var url = $"https://github.com/Gml-Launcher/Gml.Launcher/archive/refs/tags/{branchName}.zip";
-    //
-    //     using (var client = new HttpClient())
-    //     {
-    //         var stream = await client.GetStreamAsync(url);
-    //
-    //         await using (var fileStream = new FileStream(zipPath, FileMode.Create, FileAccess.Write, FileShare.None))
-    //         {
-    //             await stream.CopyToAsync(fileStream);
-    //         }
-    //     }
-    //
-    //     // Проверяем, существует ли уже папка для распаковки
-    //     if (!Directory.Exists(extractPath))
-    //         // Если папка не существует - создаем ее
-    //         Directory.CreateDirectory(extractPath);
-    //
-    //     // Распаковываем архив
-    //     ZipFile.ExtractToDirectory(zipPath, extractPath, true);
-    //
-    //     File.Delete(zipPath);
-    //
-    //     return new DirectoryInfo(extractPath).GetDirectories().First().FullName;
-    // }
-
     public async Task<string> DownloadProject(string projectPath, string branchName, string repoUrl)
     {
         var directory = new DirectoryInfo(Path.Combine(projectPath, branchName));
@@ -108,12 +72,20 @@ public class GitHubService : IGitHubService
         var processInfo = new ProcessStartInfo
         {
             FileName = "git",
-            Arguments = $"clone --recursive --branch {branchName} {repoUrl} {directory.FullName}",
             RedirectStandardOutput = true,
             RedirectStandardError = true,
             UseShellExecute = false,
             CreateNoWindow = true
         };
+        // ArgumentList passes each value through the process API untouched (no shell
+        // involved), so branchName/repoUrl can't inject extra git flags or arguments.
+        processInfo.ArgumentList.Add("clone");
+        processInfo.ArgumentList.Add("--recursive");
+        processInfo.ArgumentList.Add("--branch");
+        processInfo.ArgumentList.Add(branchName);
+        processInfo.ArgumentList.Add("--");
+        processInfo.ArgumentList.Add(repoUrl);
+        processInfo.ArgumentList.Add(directory.FullName);
 
         using var process = new Process();
         process.StartInfo = processInfo;
