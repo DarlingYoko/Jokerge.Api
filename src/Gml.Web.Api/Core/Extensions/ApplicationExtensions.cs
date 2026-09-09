@@ -285,7 +285,21 @@ public static class ApplicationExtensions
 
                         var path = context.HttpContext.Request.Path;
                         if (!string.IsNullOrEmpty(accessToken) && path.StartsWithSegments("/ws"))
+                        {
                             context.Token = accessToken;
+                            return Task.CompletedTask;
+                        }
+
+                        // Browser dashboard requests carry the access token as an httpOnly cookie
+                        // instead of an Authorization header (same pattern as the refreshToken
+                        // cookie). Only used as a fallback — an explicit Authorization header (the
+                        // launcher and other API consumers) always wins.
+                        if (!context.Request.Headers.ContainsKey("Authorization") &&
+                            context.Request.Cookies.TryGetValue("accessToken", out var cookieToken) &&
+                            !string.IsNullOrEmpty(cookieToken))
+                        {
+                            context.Token = cookieToken;
+                        }
 
                         return Task.CompletedTask;
                     }

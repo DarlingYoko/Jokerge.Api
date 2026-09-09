@@ -42,6 +42,48 @@ public class AuthHandler : IAuthHandler
         };
     }
 
+    // Same shape as the refresh cookie — kept as a separate method (rather than a shared one
+    // with a name param) so each call site stays obviously readable about which cookie it's building.
+    private static CookieOptions BuildAccessCookieOptions(HttpContext httpContext, DateTime expiresAtUtc)
+    {
+        var isHttps = httpContext.Request.IsHttps;
+
+        return new CookieOptions
+        {
+            HttpOnly = true,
+            Secure = isHttps,
+            SameSite = isHttps ? SameSiteMode.None : SameSiteMode.Lax,
+            Path = "/",
+            Expires = expiresAtUtc
+        };
+    }
+
+    // Mirrors exactly the claims AccessTokenService puts in the JWT itself (see
+    // AccessTokenService.GenerateAccessTokenCore) — this is plain JSON so a browser client that
+    // only ever sees the token as an httpOnly cookie can still read who's signed in.
+    private static Dictionary<string, object> BuildProfileClaims(int userId, string? login, string? email,
+        IReadOnlyCollection<string> roles, IReadOnlyCollection<string> permissions, DateTime accessTokenExpiresAtUtc)
+    {
+        var profile = new Dictionary<string, object>
+        {
+            ["sub"] = userId.ToString(),
+            [ClaimTypes.NameIdentifier] = userId.ToString(),
+            ["perm"] = permissions,
+            ["exp"] = new DateTimeOffset(accessTokenExpiresAtUtc).ToUnixTimeSeconds()
+        };
+
+        if (!string.IsNullOrWhiteSpace(login)) profile[ClaimTypes.Name] = login;
+        if (!string.IsNullOrWhiteSpace(email)) profile[ClaimTypes.Email] = email;
+
+        // A JWT with more than one claim of the same type serializes that claim as a JSON array
+        // instead of a scalar string — match that exactly so this looks identical to decoding the
+        // real token, since the web client's TypeScript types assume that shape.
+        if (roles.Count == 1) profile[ClaimTypes.Role] = roles.First();
+        else if (roles.Count > 1) profile[ClaimTypes.Role] = roles;
+
+        return profile;
+    }
+
     public static async Task<IResult> Logout(
         HttpContext httpContext,
         IAccessTokenService tokenService,
@@ -59,6 +101,7 @@ public class AuthHandler : IAuthHandler
         }
 
         httpContext.Response.Cookies.Delete("refreshToken", BuildRefreshCookieOptions(httpContext));
+        httpContext.Response.Cookies.Delete("accessToken", BuildAccessCookieOptions(httpContext, DateTime.UtcNow));
 
         return Results.Ok(ResponseMessage.Create("Вы вышли из системы", HttpStatusCode.OK));
     }
@@ -141,14 +184,17 @@ public class AuthHandler : IAuthHandler
         var refreshToken = tokenService.GenerateRefreshToken();
         var refreshHash = tokenService.HashRefreshToken(refreshToken);
         var expiresAt = DateTime.UtcNow.AddDays(settings.RefreshTokenDays);
+        var accessExpiresAt = DateTime.UtcNow.AddMinutes(settings.AccessTokenMinutes);
         await refreshRepo.CreateAsync(user.Id, refreshHash, expiresAt);
 
         httpContext.Response.Cookies.Append("refreshToken", refreshToken, BuildRefreshCookieOptions(httpContext, expiresAt));
+        httpContext.Response.Cookies.Append("accessToken", accessToken, BuildAccessCookieOptions(httpContext, accessExpiresAt));
 
         var tokens = new AuthTokensDto
         {
             AccessToken = accessToken,
             ExpiresIn = settings.AccessTokenMinutes * 60,
+            Profile = BuildProfileClaims(user.Id, user.Login, user.Email, roles, permissions, accessExpiresAt)
         };
 
         return Results.Ok(ResponseMessage.Create(tokens, "Успешная регистрация",
@@ -202,14 +248,17 @@ public class AuthHandler : IAuthHandler
         var refreshToken = tokenService.GenerateRefreshToken();
         var refreshHash = tokenService.HashRefreshToken(refreshToken);
         var expiresAt = DateTime.UtcNow.AddDays(settings.RefreshTokenDays);
+        var accessExpiresAt = DateTime.UtcNow.AddMinutes(settings.AccessTokenMinutes);
         await refreshRepo.CreateAsync(user.Id, refreshHash, expiresAt);
 
         httpContext.Response.Cookies.Append("refreshToken", refreshToken, BuildRefreshCookieOptions(httpContext, expiresAt));
+        httpContext.Response.Cookies.Append("accessToken", accessToken, BuildAccessCookieOptions(httpContext, accessExpiresAt));
 
         var tokens = new AuthTokensDto
         {
             AccessToken = accessToken,
             ExpiresIn = settings.AccessTokenMinutes * 60,
+            Profile = BuildProfileClaims(user.Id, user.Login, user.Email, rolesSignin, permsSignin, accessExpiresAt)
         };
 
         return Results.Ok(ResponseMessage.Create(tokens, "Успешная авторизация",
@@ -241,6 +290,8 @@ public class AuthHandler : IAuthHandler
             {
                 httpContext.Response.Cookies.Append("refreshToken", cached.RefreshToken,
                     BuildRefreshCookieOptions(httpContext, cached.ExpiresAtUtc));
+                httpContext.Response.Cookies.Append("accessToken", cached.Tokens.AccessToken,
+                    BuildAccessCookieOptions(httpContext, DateTime.UtcNow.AddMinutes(settings.AccessTokenMinutes)));
 
                 return Results.Ok(ResponseMessage.Create(cached.Tokens, "Токены обновлены", HttpStatusCode.OK));
             }
@@ -264,12 +315,15 @@ public class AuthHandler : IAuthHandler
         var newRefresh = tokenService.GenerateRefreshToken();
         var newHash = tokenService.HashRefreshToken(newRefresh);
         var expiresAt = DateTime.UtcNow.AddDays(settings.RefreshTokenDays);
+        var accessExpiresAt = DateTime.UtcNow.AddMinutes(settings.AccessTokenMinutes);
         await refreshRepo.CreateAsync(stored.UserId, newHash, expiresAt);
 
         var tokens = new AuthTokensDto
         {
             AccessToken = newAccess,
-            ExpiresIn = settings.AccessTokenMinutes * 60
+            ExpiresIn = settings.AccessTokenMinutes * 60,
+            Profile = BuildProfileClaims(stored.UserId, storedUser?.Login, storedUser?.Email, rolesRefresh,
+                permsRefresh, accessExpiresAt)
         };
 
         // Publish before revoking so a request racing this one can find it as soon as the old token
@@ -280,6 +334,7 @@ public class AuthHandler : IAuthHandler
         await refreshRepo.RevokeAsync(stored.UserId, stored.TokenHash);
 
         httpContext.Response.Cookies.Append("refreshToken", newRefresh, BuildRefreshCookieOptions(httpContext, expiresAt));
+        httpContext.Response.Cookies.Append("accessToken", newAccess, BuildAccessCookieOptions(httpContext, accessExpiresAt));
 
         return Results.Ok(ResponseMessage.Create(tokens, "Токены обновлены", HttpStatusCode.OK));
     }
