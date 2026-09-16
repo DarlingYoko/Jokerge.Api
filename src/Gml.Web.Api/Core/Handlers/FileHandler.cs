@@ -19,6 +19,9 @@ public class FileHandler : IFileHandler
 
         var (file, fileName, length) = await gmlManager.Files.GetFileStream(fileHash);
 
+        if (string.IsNullOrEmpty(fileName) || length == 0)
+            return Results.NotFound();
+
         try
         {
             // response.Headers.Append("Content-Disposition", $"attachment; filename={fileName}");
