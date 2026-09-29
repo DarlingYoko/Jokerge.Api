@@ -50,7 +50,7 @@ public class CustomEndpointAuthService(IHttpClientFactory httpClientFactory, IGm
 
         authResult.Login = model?.Login ?? login;
         authResult.Uuid = model?.UserUuid;
-        authResult.IsSlim = model?.IsSlim ?? false;
+        authResult.IsSlim = model?.IsSlim;
 
         return authResult;
     }

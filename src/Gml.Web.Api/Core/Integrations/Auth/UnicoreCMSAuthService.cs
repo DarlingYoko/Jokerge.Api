@@ -71,7 +71,7 @@ public class UnicoreCMSAuthService(IHttpClientFactory httpClientFactory, IGmlMan
             Login = data.User.Username ?? login,
             IsSuccess = result.IsSuccessStatusCode,
             Uuid = data.User.Uuid,
-            IsSlim = data.User.Skin?.Slim ?? false,
+            IsSlim = data.User.Skin?.Slim,
             TwoFactorEnabled = data.User.TwoFactorEnabled is true,
             TwoFactorSecret = data.User.TwoFactorSecret?.ToString(),
             TwoFactorSecretTemp = data.User.TwoFactorSecretTemp

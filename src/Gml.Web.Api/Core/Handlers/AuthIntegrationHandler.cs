@@ -144,6 +144,12 @@ public class AuthIntegrationHandler : IAuthIntegrationHandler
                     authResult.Message ?? "Неверный логин или пароль",
                     HttpStatusCode.Unauthorized));
 
+            // Integrations that don't report a skin model return null - keep the stored value
+            // (set on skin upload) instead of resetting the player to Steve on every login.
+            var isSlim = authResult.IsSlim
+                         ?? (await gmlManager.Users.GetUserByName(authResult.Login ?? authDto.Login))?.IsSlim
+                         ?? false;
+
             var player = await gmlManager.Users.GetAuthData(
                 authResult.Login ?? authDto.Login,
                 authDto.Password,
@@ -152,7 +158,7 @@ public class AuthIntegrationHandler : IAuthIntegrationHandler
                 context.ParseRemoteAddress(),
                 authResult.Uuid,
                 hwid,
-                authResult.IsSlim);
+                isSlim);
 
             player.AccessToken = accessTokenService.GenerateAccessToken(
                 player.Uuid,
