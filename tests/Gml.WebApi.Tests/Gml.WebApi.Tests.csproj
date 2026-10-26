@@ -25,6 +25,8 @@
 
   <ItemGroup>
     <ProjectReference Include="..\..\src\Gml.Web.Api\Gml.Web.Api.csproj" />
+    <!-- EndpointSDK pulls a same-versioned Gml.Dto from NuGet; pin the Core project copy the Api actually ships. -->
+    <ProjectReference Include="..\..\..\Jokerge.Core\src\Gml.Dto\Gml.Dto.csproj" />
   </ItemGroup>
 
   <ItemGroup>

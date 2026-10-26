@@ -189,6 +189,8 @@ public class ProfileHandler : IProfileHandler
         {
             Name = context.Request.Form["name"],
             DisplayName = context.Request.Form["displayName"],
+            DiscordName = context.Request.Form["discordName"],
+            DiscordImage = context.Request.Form["discordImage"],
             Description = context.Request.Form["description"],
             OriginalName = context.Request.Form["originalName"],
             JvmArguments = context.Request.Form["jvmArguments"],
@@ -246,7 +248,10 @@ public class ProfileHandler : IProfileHandler
             updateDto.GameArguments,
             updateDto.Priority,
             updateDto.RecommendedRam,
-            updateDto.NeedUpdateImages
+            updateDto.NeedUpdateImages,
+            // Older dashboards don't send these keys; keep the stored values instead of wiping them.
+            context.Request.Form.ContainsKey("discordName") ? updateDto.DiscordName : profile.DiscordName,
+            context.Request.Form.ContainsKey("discordImage") ? updateDto.DiscordImage : profile.DiscordImage
         );
 
         var newProfile = mapper.Map<ProfileReadDto>(profile);

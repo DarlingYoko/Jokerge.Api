@@ -17,6 +17,10 @@ public class ProfileUpdateDtoValidator : AbstractValidator<ProfileUpdateDto>
         RuleFor(x => x.Description)
             .NotEmpty().WithMessage("Описание обязательно.")
             .Length(2, 255).WithMessage("Длина описания должна быть от 2 до 255 символов.");
+        RuleFor(x => x.DiscordName)
+            .MaximumLength(128).WithMessage("Название в Discord не может быть длиннее 128 символов.");
+        RuleFor(x => x.DiscordImage)
+            .MaximumLength(256).WithMessage("Иконка в Discord не может быть длиннее 256 символов.");
         RuleFor(x => x.OriginalName)
             .NotEmpty().WithMessage("Оригинальное имя обязательно.")
             .Length(2, 100).WithMessage("Длина оригинального имени должна быть от 2 до 100 символов.");
