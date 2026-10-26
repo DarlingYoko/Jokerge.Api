@@ -1,3 +1,4 @@
+using GmlCore.Interfaces.Servers;
 using System.Net;
 using AutoMapper;
 using FluentValidation;
@@ -37,31 +38,46 @@ internal abstract class ServersHandler
             return Results.BadRequest(ResponseMessage.Create("Передан пустой параметр в качестве наименования сервера",
                 HttpStatusCode.BadRequest));
 
-        var serverNames = serverNamesString.Split(',');
-
         var profile = await gmlManager.Profiles.GetProfile(profileName);
 
         if (profile is null)
             return Results.BadRequest(ResponseMessage.Create("Профиль с данным именем не существует",
                 HttpStatusCode.BadRequest));
 
-        int amount = 0;
-        foreach (var serverName in serverNames)
-        {
-            var server = profile.Servers.FirstOrDefault(c => c.Name == serverName);
+        var servers = FindServersToRemove(profile.Servers, serverNamesString);
 
-            if (server is null)
-            {
-                continue;
-            }
+        // A 200 with nothing removed made the dashboard report success while the server stayed.
+        if (servers.Count == 0)
+            return Results.NotFound(ResponseMessage.Create($"Сервер \"{serverNamesString}\" не найден в профиле",
+                HttpStatusCode.NotFound));
 
+        foreach (var server in servers)
             profile.RemoveServer(server);
 
-            await gmlManager.Profiles.SaveProfiles();
-            amount++;
-        }
+        await gmlManager.Profiles.SaveProfiles();
 
-        return Results.Ok(ResponseMessage.Create($"Обработка завершена, всего удалено: {amount}", HttpStatusCode.OK));
+        return Results.Ok(ResponseMessage.Create($"Обработка завершена, всего удалено: {servers.Count}",
+            HttpStatusCode.OK));
+    }
+
+    /// <summary>
+    ///     Resolves the servers named in a delete request: an exact match on the whole string wins (names may contain
+    ///     commas), otherwise it is a comma-separated list. All servers with a matching name are returned, and a name
+    ///     that only matches after trimming still matches, since browsers drop trailing spaces from URLs.
+    /// </summary>
+    public static List<IProfileServer> FindServersToRemove(IEnumerable<IProfileServer> servers,
+        string serverNamesString)
+    {
+        var all = servers.ToList();
+
+        var names = all.Any(c => c.Name == serverNamesString)
+            ? [serverNamesString]
+            : serverNamesString.Split(',');
+
+        return all
+            .Where(server => names.Any(name =>
+                server.Name == name || server.Name?.Trim() == name.Trim()))
+            .ToList();
     }
 
     public static async Task<IResult> CreateServer(
