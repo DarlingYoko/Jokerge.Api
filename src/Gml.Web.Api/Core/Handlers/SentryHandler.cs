@@ -46,7 +46,7 @@ public abstract class SentryHandler : ISentryHandler
             fileContent = string.Join('\n', jsonObjects.Skip(4).Take(jsonObjects.Length - 4).ToArray());
 
         if (sentryModules is not null && sentryModules.User.IpAddress.Equals("{{auto}}"))
-            sentryModules.User.IpAddress = context.Request.Headers["X-Forwarded-For"];
+            sentryModules.User.IpAddress = context.Connection.RemoteIpAddress?.ToString() ?? "Not found";
 
         gmlManager.BugTracker.CaptureException(new BugInfo
         {

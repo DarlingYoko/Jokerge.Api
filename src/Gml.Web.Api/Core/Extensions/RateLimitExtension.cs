@@ -19,17 +19,7 @@ public static class RateLimitExtension
         {
             options.RejectionStatusCode = StatusCodes.Status429TooManyRequests;
 
-            options.GlobalLimiter = PartitionedRateLimiter.Create<HttpContext, string>(context =>
-                RateLimitPartition.GetFixedWindowLimiter(
-                    partitionKey: context.User.Identity?.Name ??
-                                  context.Connection.RemoteIpAddress?.ToString() ?? "anonymous",
-                    factory: _ => new FixedWindowRateLimiterOptions
-                    {
-                        PermitLimit = 100,
-                        Window = TimeSpan.FromMinutes(1),
-                        QueueProcessingOrder = QueueProcessingOrder.OldestFirst,
-                        QueueLimit = 100
-                    }));
+            options.GlobalLimiter = CreateGlobalLimiter();
 
             // Tighter brute-force limiter for signin/refresh, keyed by client IP.
             options.AddPolicy(AuthPolicy, context =>
@@ -55,5 +45,50 @@ public static class RateLimitExtension
         });
 
         return services;
+    }
+
+    // Game clients look up the authlib profile and skin of every player they see, and the game server
+    // checks every login, so this traffic gets its own, larger per-client budget instead of eating
+    // into the launcher's 100 requests per minute.
+    private static readonly PathString[] GameTrafficPrefixes =
+    [
+        "/api/v1/integrations/authlib",
+        "/api/v1/integrations/texture"
+    ];
+
+    public static PartitionedRateLimiter<HttpContext> CreateGlobalLimiter()
+    {
+        return PartitionedRateLimiter.Create<HttpContext, string>(context =>
+        {
+            var path = context.Request.Path;
+
+            // Gml.Web.Proxy probes /health every 3 s with a 3 s timeout and redirects every request to
+            // /wait once the probe fails, so a queued probe takes the whole API offline.
+            if (path.StartsWithSegments("/health"))
+                return RateLimitPartition.GetNoLimiter("health");
+
+            var client = context.Connection.RemoteIpAddress?.ToString() ?? "anonymous";
+
+            if (GameTrafficPrefixes.Any(prefix => path.StartsWithSegments(prefix)))
+                return RateLimitPartition.GetFixedWindowLimiter(
+                    partitionKey: $"game:{client}",
+                    factory: _ => new FixedWindowRateLimiterOptions
+                    {
+                        PermitLimit = 1000,
+                        Window = TimeSpan.FromMinutes(1),
+                        QueueProcessingOrder = QueueProcessingOrder.OldestFirst,
+                        QueueLimit = 100
+                    });
+
+            return RateLimitPartition.GetFixedWindowLimiter(
+                partitionKey: context.User.Identity?.Name ?? client,
+                factory: _ => new FixedWindowRateLimiterOptions
+                {
+                    PermitLimit = 100,
+                    Window = TimeSpan.FromMinutes(1),
+                    QueueProcessingOrder = QueueProcessingOrder.OldestFirst,
+                    QueueLimit = 100
+                });
+        });
     }
 }

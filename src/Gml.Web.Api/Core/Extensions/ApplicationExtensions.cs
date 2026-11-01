@@ -38,6 +38,7 @@ public static class ApplicationExtensions
     {
         var swaggerEnabled = bool.TryParse(GetEnvironmentVariable("SWAGGER_ENABLED"), out var isEnabled) && isEnabled;
 
+        app.UseForwardedHeaders(ForwardedHeadersExtension.CreateOptions());
         app.UseAuthentication();
         app.UseAuthorization();
         app.UseRateLimiter();
