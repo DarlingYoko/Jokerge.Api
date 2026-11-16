@@ -12,7 +12,12 @@ public class ServerSettings
     public int AccessTokenMinutes { get; set; } = 15;
     public int RefreshTokenDays { get; set; } = 30;
     public string ProjectVersion { get; set; } = null!;
+    // Extra domains the game accepts skins from (authlib-injector skinDomains), on top of the
+    // request host and the skin/cloak services. SKIN_DOMAINS, e.g. ".example.com".
     public string[] SkinDomains { get; set; } = [];
+
+    // Host that skin/cape URLs are built on instead of the request host. TEXTURE_PUBLIC_HOST.
+    public string? TexturePublicHost { get; set; }
     public string[] ClientOrigins { get; set; } = [];
 
     [JsonProperty(nameof(ProjectDescription))]

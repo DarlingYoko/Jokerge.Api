@@ -93,6 +93,8 @@ public static class ApplicationExtensions
         var swaggerEnabled = bool.TryParse(GetEnvironmentVariable("SWAGGER_ENABLED"), out var isEnabled) && isEnabled;
 
         var textureEndpoint = GetEnvironmentVariable("SERVICE_TEXTURE_ENDPOINT");
+        var skinDomains = ParseList(GetEnvironmentVariable("SKIN_DOMAINS"));
+        var texturePublicHost = GetEnvironmentVariable("TEXTURE_PUBLIC_HOST");
 
         var jwtIssuer = GetEnvironmentVariable("JWT_ISSUER");
         var jwtAudience = GetEnvironmentVariable("JWT_AUDIENCE");
@@ -106,6 +108,8 @@ public static class ApplicationExtensions
 
         return new ServerSettings
         {
+            SkinDomains = skinDomains,
+            TexturePublicHost = string.IsNullOrWhiteSpace(texturePublicHost) ? null : texturePublicHost.Trim(),
             HttpProxyAddress = httpProxyAdress,
             HttpProxyUsername = httpProxyUsername,
             HttpProxyPassword = httpProxyPassword,
@@ -350,6 +354,13 @@ public static class ApplicationExtensions
 
             return new HttpClient(handler);
         }
+    }
+
+    internal static string[] ParseList(string raw)
+    {
+        return raw.Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries)
+            .SelectMany(part => part.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
+            .ToArray();
     }
 
     private static string GetEnvironmentVariable(string name)

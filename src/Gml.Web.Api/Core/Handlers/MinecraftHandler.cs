@@ -1,6 +1,7 @@
 using System.Diagnostics;
 using System.Text;
 using Gml.Dto.Minecraft.AuthLib;
+using Gml.Web.Api.Core.Helpers;
 using Gml.Web.Api.Core.Options;
 using Gml.Web.Api.Core.Services;
 using GmlCore.Interfaces;
@@ -16,10 +17,12 @@ public class MinecraftHandler : IMinecraftHandler
 {
     public static async Task<IResult> GetMetaData(HttpContext context, ISystemService systemService,
         IGmlManager gmlManager,
-        IOptions<ServerSettings> options)
+        ServerSettings settings)
     {
-        var skinsAddresses = options.Value.SkinDomains.ToList();
-        var hostValue = context.Request.Headers["X-Forwarded-Host"].FirstOrDefault() ?? context.Request.Host.Value;
+        // The registered ServerSettings singleton, not IOptions<ServerSettings>: nothing configures
+        // the options pipeline, so IOptions only ever held a default instance.
+        var skinsAddresses = settings.SkinDomains.ToList();
+        var hostValue = context.Request.Headers["X-Forwarded-Host"].FirstOrDefault() ?? context.Request.Host.Value ?? string.Empty;
         var address = new Uri($"{context.Request.Scheme}://{hostValue}");
 
         skinsAddresses.AddRange(await GetEnvironmentAddress(gmlManager));
@@ -33,8 +36,8 @@ public class MinecraftHandler : IMinecraftHandler
             SkinDomains = skinsAddresses.ToArray(),
             Meta =
             {
-                ServerName = options.Value.ProjectName,
-                ImplementationVersion = options.Value.ProjectVersion
+                ServerName = settings.ProjectName,
+                ImplementationVersion = settings.ProjectVersion
             },
             SignaturePublicKey = await systemService.GetPublicKey()
         };
@@ -68,7 +71,7 @@ public class MinecraftHandler : IMinecraftHandler
     }
 
     public static async Task<IResult> HasJoined(HttpContext context, IGmlManager gmlManager,
-        ISystemService systemService, string userName,
+        ISystemService systemService, ServerSettings settings, string userName,
         string serverId,
         string? ip)
     {
@@ -91,8 +94,8 @@ public class MinecraftHandler : IMinecraftHandler
                                   ?.ToLower()
                               ?? EnumExtensions.GetDisplayName(TextureProtocol.Https).ToLower();
 
-        var hostValue = context.Request.Headers["X-Forwarded-Host"].FirstOrDefault() ?? context.Request.Host.Value;
-        var address = $"{textureProtocol}://{hostValue}";
+        var hostValue = context.Request.Headers["X-Forwarded-Host"].FirstOrDefault() ?? context.Request.Host.Value ?? string.Empty;
+        var address = TextureAddress.Build(textureProtocol, settings.TexturePublicHost, hostValue);
 
         var texture = new PropertyTextures
         {
@@ -166,7 +169,7 @@ public class MinecraftHandler : IMinecraftHandler
     }
 
     public static async Task<IResult> GetProfile(HttpContext context, IGmlManager gmlManager,
-        ISystemService systemService, string uuid,
+        ISystemService systemService, ServerSettings settings, string uuid,
         bool unsigned = false)
     {
         var guid = Guid.Parse(uuid);
@@ -190,8 +193,8 @@ public class MinecraftHandler : IMinecraftHandler
                                   ?.ToLower()
                               ?? EnumExtensions.GetDisplayName(TextureProtocol.Https).ToLower();
 
-        var hostValue = context.Request.Headers["X-Forwarded-Host"].FirstOrDefault() ?? context.Request.Host.Value;
-        var address = $"{textureProtocol}://{hostValue}";
+        var hostValue = context.Request.Headers["X-Forwarded-Host"].FirstOrDefault() ?? context.Request.Host.Value ?? string.Empty;
+        var address = TextureAddress.Build(textureProtocol, settings.TexturePublicHost, hostValue);
 
         var texture = new PropertyTextures
         {
