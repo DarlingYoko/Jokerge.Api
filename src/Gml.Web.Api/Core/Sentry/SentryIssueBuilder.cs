@@ -41,11 +41,12 @@ public static class SentryIssueBuilder
         var root = SentryMessageNormalizer.RootException(latest.Bug)!;
 
         var users = events
-            .GroupBy(e => (User: Display(e.Bug.Username), Pc: Display(e.Bug.PcName)))
+            // Two players on one PC and Windows account are two rows, not one.
+            .GroupBy(e => (User: Display(e.Bug.Username), Pc: Display(e.Bug.PcName), Player: Clean(e.Bug.Player)))
             .Select(g =>
             {
                 var last = g.MaxBy(e => e.At);
-                return new SentryIssueUserDto(g.Key.User, g.Key.Pc, g.Count(), last.At,
+                return new SentryIssueUserDto(g.Key.User, g.Key.Pc, g.Key.Player, g.Count(), last.At,
                     Clean(last.Bug.IpAddress), Clean(last.Bug.OsVersion), Clean(last.Bug.Release));
             })
             .OrderByDescending(u => u.Count)
@@ -78,6 +79,7 @@ public static class SentryIssueBuilder
             at,
             Clean(bug.Username),
             Clean(bug.PcName),
+            Clean(bug.Player),
             Clean(bug.IpAddress),
             Clean(bug.OsVersion),
             Clean(bug.OsIdentifier),

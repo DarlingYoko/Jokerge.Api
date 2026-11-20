@@ -33,7 +33,8 @@ public static class SentryStatsBuilder
                 .Select(e => SentryMessageNormalizer.Fingerprint(e.Bug))
                 .Distinct()
                 .Count(),
-            lastWeek.Select(e => (e.Bug.Username, e.Bug.PcName)).Distinct().Count(),
+            lastWeek.Select(e => (e.Bug.Username, e.Bug.PcName, Player: string.IsNullOrWhiteSpace(e.Bug.Player) ? null : e.Bug.Player))
+                .Distinct().Count(),
             events.Count == 0 ? null : events.Max(e => e.At));
     }
 

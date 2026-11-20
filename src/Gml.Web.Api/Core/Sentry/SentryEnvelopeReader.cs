@@ -74,9 +74,16 @@ public static class SentryEnvelopeReader
             IpAddress = ip ?? NotFound,
             OsVersion = payload.Contexts?.Os?.RawDescription,
             OsIdentifier = payload.Contexts?.Runtime?.RawDescription ?? payload.Contexts?.Runtime?.Type,
-            Release = payload.Release
+            Release = payload.Release,
+            Player = PlayerTag(payload.Tags)
         };
     }
+
+    /// <summary>The launcher tags events with the signed-in Minecraft nickname as <c>player</c>.</summary>
+    private static string? PlayerTag(IReadOnlyDictionary<string, string>? tags) =>
+        tags is not null && tags.TryGetValue("player", out var player) && !string.IsNullOrWhiteSpace(player)
+            ? player.Trim()
+            : null;
 
     private static ExceptionReport ToReport(Value value) => new()
     {

@@ -28,9 +28,14 @@ public record SentryFrameDto(string? Function, string? File, int? Line, bool InA
 
 public record SentryExceptionDto(string Type, string Message, IReadOnlyList<SentryFrameDto> Frames);
 
+/// <summary>
+///     One device that hit the problem. <see cref="Username" /> is the Windows account,
+///     <see cref="Player" /> the Minecraft nickname signed in at the time (null before sign-in).
+/// </summary>
 public record SentryIssueUserDto(
     string Username,
     string PcName,
+    string? Player,
     int Count,
     DateTime LastSeen,
     string? IpAddress,
@@ -42,6 +47,7 @@ public record SentryIssueEventDto(
     DateTime SendAt,
     string? Username,
     string? PcName,
+    string? Player,
     string? IpAddress,
     string? Os,
     string? Runtime,

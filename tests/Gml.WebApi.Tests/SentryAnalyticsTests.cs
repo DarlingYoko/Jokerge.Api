@@ -16,7 +16,7 @@ public class SentryAnalyticsTests
 
     private static BugInfo Bug(string type, string message, DateTime sendAtUtc, string user = "yoko",
         string pc = "DESKTOP-1", ProjectType project = ProjectType.Launcher, string? release = null,
-        IEnumerable<IExceptionReport>? exceptions = null) => new()
+        IEnumerable<IExceptionReport>? exceptions = null, string? player = null) => new()
     {
         Id = Guid.NewGuid().ToString(),
         SendAt = sendAtUtc,
@@ -25,6 +25,7 @@ public class SentryAnalyticsTests
         IpAddress = "10.0.0.1",
         OsVersion = "Microsoft Windows 10.0.22631",
         Release = release,
+        Player = player,
         ProjectType = project,
         MemoryInfo = new MemoryInfo(),
         Exceptions = exceptions?.ToList() ?? new List<IExceptionReport>
@@ -199,6 +200,59 @@ public class SentryAnalyticsTests
     }
 
     [Test]
+    public void BuildIssues_ShowsPlayerPerUserAndOnLatestEvent()
+    {
+        var bugs = new List<IBugInfo>
+        {
+            Bug("A", "x", Now.AddHours(-3), "yoko", "PC-A", player: "Waffle"),
+            Bug("A", "x", Now.AddHours(-2), "yoko", "PC-A", player: "Waffle"),
+            Bug("A", "x", Now.AddHours(-1), "vipig", "PC-B", player: "Vipig_")
+        };
+
+        var issue = SentryIssueBuilder.Build(bugs, new SentryTimeRange(Now.AddDays(-1), Now), 0)[0];
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(issue.Users.Select(u => (u.Username, u.Player, u.Count)),
+                Is.EqualTo(new[] { ("yoko", (string?)"Waffle", 2), ("vipig", (string?)"Vipig_", 1) }));
+            Assert.That(issue.LatestEvent.Player, Is.EqualTo("Vipig_"));
+        });
+    }
+
+    [Test]
+    public void BuildIssues_TwoPlayersOnOnePc_AreTwoUsers()
+    {
+        // Brothers share a PC and a Windows account but play under their own nicknames.
+        var bugs = new List<IBugInfo>
+        {
+            Bug("A", "x", Now.AddHours(-2), "home", "PC-A", player: "Elder"),
+            Bug("A", "x", Now.AddHours(-1), "home", "PC-A", player: "Younger")
+        };
+
+        var issue = SentryIssueBuilder.Build(bugs, new SentryTimeRange(Now.AddDays(-1), Now), 0)[0];
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(issue.CountUsers, Is.EqualTo(2));
+            Assert.That(issue.Users.Select(u => u.Player), Is.EquivalentTo(new[] { "Elder", "Younger" }));
+        });
+    }
+
+    [Test]
+    public void BuildIssues_ReportsBeforeSignIn_HaveNoPlayer()
+    {
+        var bugs = new List<IBugInfo> { Bug("A", "x", Now.AddHours(-1), "yoko", "PC-A", player: "  ") };
+
+        var issue = SentryIssueBuilder.Build(bugs, new SentryTimeRange(Now.AddDays(-1), Now), 0)[0];
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(issue.Users.Single().Player, Is.Null);
+            Assert.That(issue.LatestEvent.Player, Is.Null);
+        });
+    }
+
+    [Test]
     public void BuildIssues_GraphicUsesHoursForShortRanges_DaysForLonger()
     {
         var bugs = new List<IBugInfo> { Bug("A", "x", Now.AddMinutes(-30)) };
@@ -303,6 +357,21 @@ public class SentryAnalyticsTests
     }
 
     [Test]
+    public void BuildSummary_TwoPlayersOnOnePc_AreTwoUsers()
+    {
+        var bugs = new List<IBugInfo>
+        {
+            Bug("A", "x", Now.AddHours(-2), "home", "PC-A", player: "Elder"),
+            Bug("A", "x", Now.AddHours(-1), "home", "PC-A", player: "Younger"),
+            Bug("A", "x", Now.AddMinutes(-30), "home", "PC-A", player: "Younger")
+        };
+
+        var summary = SentryStatsBuilder.BuildSummary(bugs, totalBugs: 3, Now, tzOffsetMinutes: 0);
+
+        Assert.That(summary.UsersLast7Days, Is.EqualTo(2));
+    }
+
+    [Test]
     public void BuildDaily_FillsEveryDayAndSplitsProjects()
     {
         var bugs = new List<IBugInfo>
@@ -329,8 +398,9 @@ public class SentryAnalyticsTests
 
     private const string EnvelopeHeader = "{\"event_id\":\"e1\",\"sent_at\":\"2026-11-20T11:00:05Z\"}";
 
-    private static string EventPayload(string release = "Gml.Launcher@1.0.0.15") =>
+    private static string EventPayload(string release = "Gml.Launcher@1.0.0.15", string tags = "") =>
         "{\"event_id\":\"e1\",\"timestamp\":\"2026-11-20T11:00:00Z\",\"server_name\":\"PC-A\",\"release\":\"" + release + "\"," +
+        tags +
         "\"user\":{\"username\":\"yoko\",\"ip_address\":\"{{auto}}\"}," +
         "\"contexts\":{\"os\":{\"raw_description\":\"Windows 11\"},\"runtime\":{\"type\":\"runtime\"}}," +
         "\"exception\":{\"values\":[" +
@@ -355,6 +425,32 @@ public class SentryAnalyticsTests
             Assert.That(bug.PcName, Is.EqualTo("PC-A"));
             Assert.That(SentryTime.ToUtc(bug.SendAt), Is.EqualTo(new DateTime(2026, 11, 20, 11, 0, 0, DateTimeKind.Utc)));
         });
+    }
+
+    [Test]
+    public void ReadEnvelope_PlayerTag_FillsPlayer_KeepsWindowsUser()
+    {
+        var payload = EventPayload(tags: "\"tags\":{\"player\":\"Waffle\",\"os\":\"win\"},");
+        var envelope = string.Join('\n', EnvelopeHeader, "{\"type\":\"event\",\"length\":10}", payload);
+
+        var bug = SentryEnvelopeReader.Read(envelope, null);
+
+        Assert.That(bug, Is.Not.Null);
+        Assert.Multiple(() =>
+        {
+            Assert.That(bug!.Player, Is.EqualTo("Waffle"));
+            Assert.That(bug.Username, Is.EqualTo("yoko"));
+        });
+    }
+
+    [Test]
+    public void ReadEnvelope_NoPlayerTag_PlayerIsNull()
+    {
+        var envelope = string.Join('\n', EnvelopeHeader, "{\"type\":\"event\",\"length\":10}", EventPayload());
+
+        var bug = SentryEnvelopeReader.Read(envelope, null);
+
+        Assert.That(bug!.Player, Is.Null);
     }
 
     [Test]
