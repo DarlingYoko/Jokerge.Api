@@ -221,6 +221,17 @@ public static class EndpointsExtensions
             .WithTags("Integration/Sentry")
             .RequireAuthorization("perm:integrations.sentry.manage");
 
+        app.MapPost("/api/v1/sentry/issues/resolve", SentryHandler.ResolveIssue)
+            .WithOpenApi(generatedOperation =>
+            {
+                generatedOperation.Summary = "Отметить проблему решённой";
+                return generatedOperation;
+            })
+            .WithDescription("Удаляет все события одной проблемы; если она повторится, появится снова")
+            .WithName("Resolve sentry issue")
+            .WithTags("Integration/Sentry")
+            .RequireAuthorization("perm:integrations.sentry.manage");
+
         app.MapPost("/api/v1/sentry/filter", SentryHandler.GetFilterSentry)
             .WithOpenApi(generatedOperation =>
             {

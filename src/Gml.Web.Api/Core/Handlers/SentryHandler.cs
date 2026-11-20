@@ -1,23 +1,12 @@
-﻿using System.Collections.Frozen;
-using System.Globalization;
-using System.Net;
-using System.Text;
-using System.Text.Json;
-using System.Text.RegularExpressions;
-using AutoMapper;
-using Gml.Core.Launcher;
+﻿using System.Net;
 using Gml.Domains.Sentry;
 using Gml.Dto.Messages;
 using Gml.Dto.Sentry;
-using Gml.Dto.Sentry.Stats;
-using Gml.Models.Converters;
-using Gml.Web.Api.Core.Repositories;
+using Gml.Web.Api.Core.Sentry;
 using Gml.Web.Api.Core.Services;
 using GmlCore.Interfaces;
 using GmlCore.Interfaces.Launcher;
 using GmlCore.Interfaces.Sentry;
-using Newtonsoft.Json;
-using MemoryInfo = Gml.Core.Launcher.MemoryInfo;
 
 namespace Gml.Web.Api.Core.Handlers;
 
@@ -25,72 +14,25 @@ public abstract class SentryHandler : ISentryHandler
 {
     public static async Task<IResult> CreateBugInfo(HttpContext context, IGmlManager gmlManager, int projectId)
     {
-        byte[] compressedData;
+        using var memoryStream = new MemoryStream();
+        await context.Request.Body.CopyToAsync(memoryStream);
 
-        using (var memoryStream = new MemoryStream())
+        string envelope;
+        try
         {
-            await context.Request.Body.CopyToAsync(memoryStream);
-            compressedData = memoryStream.ToArray();
+            envelope = await CompressionService.Uncompress(memoryStream.ToArray());
+        }
+        catch (System.Exception)
+        {
+            return Results.BadRequest(ResponseMessage.Create("Не удалось распаковать отчёт", HttpStatusCode.BadRequest));
         }
 
-        string uncompressedContent = await CompressionService.Uncompress(compressedData);
+        var bug = SentryEnvelopeReader.Read(envelope, context.Connection.RemoteIpAddress?.ToString());
 
-        string[] jsonObjects = uncompressedContent.Split(new[] { '\r', '\n' }, StringSplitOptions.RemoveEmptyEntries);
-
-        var sentryEvent = JsonConvert.DeserializeObject<SentryEventDto>(jsonObjects[0]);
-        var sentryLength = JsonConvert.DeserializeObject<SentryEventLengthDto>(jsonObjects[1]);
-        var sentryModules = JsonConvert.DeserializeObject<SentryModulesDto>(jsonObjects[2]);
-        var fileContent = string.Empty;
-
-        if (jsonObjects.Length >= 4)
-            fileContent = string.Join('\n', jsonObjects.Skip(4).Take(jsonObjects.Length - 4).ToArray());
-
-        if (sentryModules is not null && sentryModules.User.IpAddress.Equals("{{auto}}"))
-            sentryModules.User.IpAddress = context.Connection.RemoteIpAddress?.ToString() ?? "Not found";
-
-        gmlManager.BugTracker.CaptureException(new BugInfo
-        {
-            ProjectType = ProjectType.Launcher,
-            PcName = sentryModules.ServerName ?? "Not found",
-            Username = sentryModules.User.Username ?? "Not found",
-            MemoryInfo = new MemoryInfo
-            {
-                AllocatedBytes = sentryModules.Contexts.MemoryInfo.AllocatedBytes,
-                HighMemoryLoadThresholdBytes = sentryModules.Contexts.MemoryInfo.HighMemoryLoadThresholdBytes,
-                TotalAvailableMemoryBytes = sentryModules.Contexts.MemoryInfo.TotalAvailableMemoryBytes,
-                Compacted = sentryModules.Contexts.MemoryInfo.Compacted,
-                Concurrent = sentryModules.Contexts.MemoryInfo.Concurrent,
-                PauseDurations = sentryModules.Contexts.MemoryInfo.PauseDurations,
-            },
-            Exceptions = sentryModules.Exception.Values.Select(x => new ExceptionReport
-            {
-                Type = x.Type ?? "Not Found",
-                ValueData = x.ValueData ?? "Not Found",
-                Module = x.Module ?? "Not Found",
-                ThreadId = x.ThreadId,
-                Id = x.Id,
-                Crashed = x.Crashed,
-                Current = x.Current,
-                StackTrace = sentryModules.Exception.Values.SelectMany(x => x.Stacktrace?.Frames.Select(frame =>
-                    new StackTrace
-                    {
-                        Filename = frame.Filename,
-                        Function = frame.Function,
-                        Lineno = frame.Lineno,
-                        Colno = frame.Colno,
-                        AbsPath = frame.AbsPath ?? "Not Found",
-                        InApp = frame.InApp,
-                        Package = frame.Package,
-                        InstructionAddr = frame.InstructionAddr,
-                        AddrMode = frame.AddrMode,
-                        FunctionId = frame.FunctionId
-                    }) ?? []) ?? [],
-            }),
-            SendAt = sentryEvent.SentAt,
-            IpAddress = sentryModules.User.IpAddress ?? "Not found",
-            OsVersion = sentryModules.Contexts.Os.RawDescription,
-            OsIdentifier = sentryModules.Contexts.Runtime.Type
-        });
+        // Transactions, sessions and events without an exception are accepted and dropped, so
+        // the SDK does not retry them.
+        if (bug is not null)
+            gmlManager.BugTracker.CaptureException(bug);
 
         return Results.Empty;
     }
@@ -102,17 +44,37 @@ public abstract class SentryHandler : ISentryHandler
         return Results.Ok(ResponseMessage.Create("Все ошибки очищены", HttpStatusCode.OK));
     }
 
+    public static async Task<IResult> ResolveIssue(IGmlManager gmlManager, SentryResolveIssueDto request)
+    {
+        if (string.IsNullOrWhiteSpace(request.Fingerprint))
+            return Results.BadRequest(ResponseMessage.Create("Не указана проблема", HttpStatusCode.BadRequest));
+
+        var bugs = await gmlManager.BugTracker.GetFilteredBugs(_ => true);
+        var ids = bugs
+            .Where(b => SentryMessageNormalizer.RootException(b) is not null)
+            .Where(b => SentryMessageNormalizer.Fingerprint(b) == request.Fingerprint)
+            .Select(b => Guid.TryParse(b.Id, out var id) ? id : Guid.Empty)
+            .Where(id => id != Guid.Empty)
+            .ToList();
+
+        if (ids.Count == 0)
+            return Results.NotFound(ResponseMessage.Create("Проблема не найдена", HttpStatusCode.NotFound));
+
+        var removed = await gmlManager.BugTracker.RemoveBugsAsync(ids);
+
+        return Results.Ok(ResponseMessage.Create(removed, $"Удалено событий: {removed}", HttpStatusCode.OK));
+    }
 
     public static async Task<IResult> GetBugs(IGmlManager gmlManager, SentryFilterDto filter)
     {
-        var minDate = filter.DateFrom ?? DateTime.MinValue;
-        var maxDate = filter.DateTo?.Date.AddDays(1).AddTicks(-1) ?? DateTime.MaxValue;
-        var bugs = (await gmlManager.BugTracker.GetFilteredBugs(c => c.Date >= minDate && c.Date <= maxDate)).ToFrozenSet();
+        var range = SentryTime.ResolveRange(filter.DateFrom, filter.DateTo, DateTime.UtcNow);
+        var bugs = (await LoadBugs(gmlManager, range))
+            .Where(c => c.Exceptions.Any())
+            .ToList();
 
         var error = new BaseSentryError
         {
             Bugs = bugs
-                .Where(c => c.Exceptions.Any())
                 .GroupBy(bug => bug.Exceptions.First().Type)
                 .Select(group => new SentryBugs
                 {
@@ -120,12 +82,8 @@ public abstract class SentryHandler : ISentryHandler
                     Count = group.Count(),
                     CountUsers = group.Select(bug => bug.PcName).Distinct().Count(),
                     Graphics = group
-                        .GroupBy(bug => new DateTime(bug.SendAt.Year, bug.SendAt.Month, bug.SendAt.Day))
-                        .Select(monthGroup => new SentryGraphic
-                        {
-                            Month = monthGroup.Key,
-                            Count = monthGroup.Count()
-                        })
+                        .GroupBy(bug => SentryTime.ToUtc(bug.SendAt).Date)
+                        .Select(dayGroup => new SentryGraphic { Month = dayGroup.Key, Count = dayGroup.Count() })
                         .ToList()
                 })
                 .ToList(),
@@ -138,203 +96,92 @@ public abstract class SentryHandler : ISentryHandler
 
     public static async Task<IResult> GetFilterSentry(IGmlManager gmlManager, SentryFilterDto filter)
     {
-        var minDate = filter.DateFrom ?? DateTime.MinValue;
-        var maxDate = filter.DateTo?.Date.AddDays(1).AddTicks(-1) ?? DateTime.MaxValue;
+        var range = SentryTime.ResolveRange(filter.DateFrom, filter.DateTo, DateTime.UtcNow);
+        var projectType = filter.ProjectType == 0 ? ProjectType.All : filter.ProjectType;
 
-        var bugs = await gmlManager.BugTracker.GetFilteredBugs(c => c.Date >= minDate && c.Date <= maxDate);
-
-        var byProject = bugs.Where(c => (filter.ProjectType & c.ProjectType) != 0);
+        var byProject = (await LoadBugs(gmlManager, range)).Where(c => (projectType & c.ProjectType) != 0);
 
         return Results.Ok(ResponseMessage.Create(byProject, "Отфильтрованные ошибки", HttpStatusCode.OK));
     }
 
-    public static async Task<IResult> GetFilterListSentry(IGmlManager gmlManager, SentryFilterDto filter)
+    /// <summary>Problems list for the dashboard: one row per distinct problem in the window.</summary>
+    public static async Task<IResult> GetFilterListSentry(IGmlManager gmlManager, SentryIssuesFilterDto filter)
     {
-        var minDate = filter.DateFrom ?? DateTime.MinValue;
-        var maxDate = filter.DateTo ?? filter.DateTo?.Date.AddDays(1).AddTicks(-1) ?? DateTime.MaxValue;
+        var range = SentryTime.ResolveRange(filter.DateFrom, filter.DateTo, DateTime.UtcNow);
+        var projectType = filter.ProjectType == 0 ? ProjectType.All : filter.ProjectType;
 
-        var bugs = await gmlManager.BugTracker.GetFilteredBugs(c => c.Date >= minDate && c.Date <= maxDate);
+        var bugs = (await LoadBugs(gmlManager, range)).Where(c => (projectType & c.ProjectType) != 0);
+        var issues = SentryIssueBuilder.Build(bugs, range, SentryTime.ResolveOffset(filter.TzOffset));
 
-        var byProject = bugs.Where(c => (filter.ProjectType & c.ProjectType) != 0);
-
-        var exceptions = byProject.GroupBy(bug =>
-            new {
-                BugType = bug.Exceptions.First().Type,
-                BugInfo = bug.Exceptions.First().ValueData
-            })
-            .Select(group => new SentryExceptionReadDto
-            {
-                Exception = group.Key.BugType,
-                Count = group.Count(),
-                StackTrace = BuildStackTraceString(group.SelectMany(c => c.Exceptions).DistinctBy(c => c.ValueData).ToFrozenSet()),
-                CountUsers = group.Select(bug => bug.PcName).Distinct().Count(),
-                OperationSystems = group
-                    .Select(x => x.OsVersion)
-                    .GroupBy(os => os)
-                    .Select(bug => new SentryOperationSystem
-                    {
-                        Count = bug.Count(), // Количество элементов в группе
-                        OsType = bug.Key
-                    }),
-                Graphic = group
-                    .GroupBy(bug => new DateTime(bug.SendAt.Year, bug.SendAt.Month, bug.SendAt.Day))
-                    .Select(monthGroup => new SentryGraphic
-                    {
-                        Month = monthGroup.Key,
-                        Count = monthGroup.Count()
-                    })
-                    .ToList(),
-                BugInfo = group.FirstOrDefault()
-            });
-
-        return Results.Ok(ResponseMessage.Create(exceptions, "Отфильтрованные ошибки", HttpStatusCode.OK));
+        return Results.Ok(ResponseMessage.Create(issues, "Отфильтрованные ошибки", HttpStatusCode.OK));
     }
 
-    private static string BuildStackTraceString(FrozenSet<IExceptionReport> stackTraceList)
+    public static async Task<IResult> GetLastSentryErrors(IGmlManager gmlManager, int? tzOffset)
     {
-        var builder = new StringBuilder();
-        builder.Append(string.Concat(stackTraceList.SelectMany(s => s.ValueData)));
-        builder.Append(Environment.NewLine);
-        builder.Append(string.Join(Environment.NewLine,
-            stackTraceList
-                .SelectMany(c => c.StackTrace)
-                .Select(st =>
-                    $"{st.Function} at {st.Filename}:{st.Lineno} in {st.AbsPath}"
-                )));
+        const int days = 90;
+        var now = DateTime.UtcNow;
+        var range = new SentryTimeRange(now.AddDays(-days - 1), now);
 
-        return builder.ToString();
+        var bugs = await LoadBugs(gmlManager, range);
+        var stats = SentryStatsBuilder.BuildDaily(bugs, now, SentryTime.ResolveOffset(tzOffset), days);
+
+        return Results.Ok(ResponseMessage.Create(stats, "Ошибки за последние 3 месяца", HttpStatusCode.OK));
     }
 
-    public static async Task<IResult> GetLastSentryErrors(IGmlManager gmlManager, IMapper mapper)
+    public static async Task<IResult> GetSummarySentryErrors(IGmlManager gmlManager, int? tzOffset)
     {
-        var maxDate = DateTime.Now;
-        var minDate = maxDate.AddMonths(-3);
+        var now = DateTime.UtcNow;
+        var range = new SentryTimeRange(now.AddDays(-SentryStatsBuilder.SummaryDays), now);
 
-        var bugs = await gmlManager.BugTracker.GetFilteredBugs(c => c.Date >= minDate && c.Date <= maxDate);
+        var bugs = await LoadBugs(gmlManager, range);
+        var total = await gmlManager.BugTracker.CountBugsAsync();
+        var summary = SentryStatsBuilder.BuildSummary(bugs, total, now, SentryTime.ResolveOffset(tzOffset));
 
-        var mappedBugs = bugs
-            .GroupBy(b => b.SendAt.Date)
-            .Select(g => new ProjectLastStatsReadDto
-            {
-                Date = g.Key.Date,
-                Launcher = g.Count(b => b.ProjectType == ProjectType.Launcher),
-                Backend = g.Count(b => b.ProjectType == ProjectType.Backend)
-            })
-            .ToList();
-
-        var dateRange = Enumerable.Range(0, (maxDate - minDate).Days + 1)
-            .Select(offset => minDate.AddDays(offset).Date)
-            .ToList();
-
-        var completeStats = dateRange.GroupJoin(
-                mappedBugs,
-                date => date,
-                stats => stats.Date,
-                (date, statsGroup) => new ProjectLastStatsReadDto
-                {
-                    Date = date,
-                    Launcher = statsGroup.Any() ? statsGroup.First().Launcher : 0,
-                    Backend = statsGroup.Any() ? statsGroup.First().Backend : 0
-                })
-            .ToList();
-
-        return Results.Ok(ResponseMessage.Create(completeStats, "Отфильтрованные ошибки", HttpStatusCode.OK));
-    }
-
-    public static async Task<IResult> GetSummarySentryErrors(IGmlManager gmlManager, IMapper mapper)
-    {
-        var today = DateTime.Today.AddDays(1).AddTicks(-1);
-        var thisMonthStart = new DateTime(today.Year, today.Month, 1);
-        var lastMonthStart = thisMonthStart.AddMonths(-1);
-        var lastMonthEnd = thisMonthStart.AddDays(-1);
-        var yesterday = today.AddDays(-1);
-
-        // Получение всех багов за последние два месяца
-        var allBugs = (await gmlManager.BugTracker.GetFilteredBugs(b => b.Date >= lastMonthStart && b.Date <= today)).ToFrozenSet();
-
-        // Общее количество ошибок
-        int totalBugs = allBugs.Count();
-
-        // Ошибки за этот месяц
-        int bugsThisMonth = allBugs.Count(b => b.SendAt >= thisMonthStart);
-
-        // Ошибки за прошлый месяц
-        int bugsLastMonth = allBugs.Count(b => b.SendAt >= lastMonthStart && b.SendAt <= lastMonthEnd);
-
-        // Расчет процента изменения за месяц
-        double percentageChangeMonth = CalculatePercentageChange(bugsLastMonth, bugsThisMonth);
-
-        // Ошибки за сегодня
-        int bugsToday = allBugs.Count(b => b.SendAt.Date == today.Date);
-
-        // Ошибки за вчера
-        int bugsYesterday = allBugs.Count(b => b.SendAt.Date == yesterday.Date);
-
-        // Расчет процента изменения за день
-        double percentageChangeDay = CalculatePercentageChange(bugsYesterday, bugsToday);
-
-        var result = new BugStatisticsReadDto
-        {
-            TotalBugs = totalBugs,
-            BugsThisMonth = bugsThisMonth,
-            PercentageChangeMonth = percentageChangeMonth,
-            BugsToday = bugsToday,
-            PercentageChangeDay = percentageChangeDay,
-            FixBugs = 0,
-            PercentageChangeDayFixBugs = 0,
-        };
-
-        return Results.Ok(ResponseMessage.Create(result, "Статистика", HttpStatusCode.OK));
-    }
-
-    private static double CalculatePercentageChange(int previousValue, int currentValue)
-    {
-        if (previousValue == 0)
-        {
-            return currentValue == 0 ? 0 : 100;
-        }
-
-        return ((double)(currentValue - previousValue) / previousValue) * 100;
+        return Results.Ok(ResponseMessage.Create(summary, "Статистика", HttpStatusCode.OK));
     }
 
     public static async Task<IResult> GetByException(IGmlManager gmlManager, string exception)
     {
-        var bugs = (await gmlManager.BugTracker.GetAllBugs()).ToFrozenSet();
+        var group = (await gmlManager.BugTracker.GetAllBugs())
+            .Where(bug => SentryMessageNormalizer.RootException(bug)?.Type == exception)
+            .ToList();
 
-        var exceptions = bugs.GroupBy(bug => bug.Exceptions.First().Type == exception)
-            .Select(group => new SentryExceptionReadDto
-            {
-                Count = group.Count(),
-                CountUsers = group.Select(bug => bug.PcName).Distinct().Count(),
-                OperationSystems = group
-                    .Select(x => x.OsVersion)
-                    .GroupBy(os => os)
-                    .Select(bug => new SentryOperationSystem
-                    {
-                        Count = bug.Count(), // Количество элементов в группе
-                        OsType = bug.Key
-                    }),
-                Graphic = group
-                    .GroupBy(bug => new DateTime(bug.SendAt.Year, bug.SendAt.Month, bug.SendAt.Day))
-                    .Select(monthGroup => new SentryGraphic
-                    {
-                        Month = monthGroup.Key,
-                        Count = monthGroup.Count()
-                    })
-                    .ToList(),
-                BugInfo = group.FirstOrDefault()
-            });
+        var result = new SentryExceptionReadDto
+        {
+            Exception = exception,
+            Count = group.Count,
+            CountUsers = group.Select(bug => bug.PcName).Distinct().Count(),
+            StackTrace = group.Count == 0 ? string.Empty : SentryStackTraceFormatter.Format(group[^1].Exceptions),
+            OperationSystems = group
+                .GroupBy(x => x.OsVersion)
+                .Select(os => new SentryOperationSystem { Count = os.Count(), OsType = os.Key ?? string.Empty })
+                .ToList(),
+            Graphic = group
+                .GroupBy(bug => SentryTime.ToUtc(bug.SendAt).Date)
+                .Select(day => new SentryGraphic { Month = day.Key, Count = day.Count() })
+                .ToList(),
+            BugInfo = group.LastOrDefault()!
+        };
 
-        return Results.Ok(ResponseMessage.Create(exceptions, "Информация об ошибке", HttpStatusCode.OK));
+        return Results.Ok(ResponseMessage.Create(result, "Информация об ошибке", HttpStatusCode.OK));
     }
 
     public static async Task<IResult> GetBugId(IGmlManager gmlManager, string id)
     {
-        var bug = await gmlManager.BugTracker.GetBugId(Guid.Parse(id));
+        var bug = Guid.TryParse(id, out var guid) ? await gmlManager.BugTracker.GetBugId(guid) : null;
 
         if (bug is null)
-            return Results.BadRequest(ResponseMessage.Create("Ошибка не найдена", HttpStatusCode.BadRequest));
+            return Results.NotFound(ResponseMessage.Create("Ошибка не найдена", HttpStatusCode.NotFound));
 
         return Results.Ok(ResponseMessage.Create(bug, "Bug info", HttpStatusCode.OK));
+    }
+
+    private static Task<IEnumerable<IBugInfo>> LoadBugs(IGmlManager gmlManager, SentryTimeRange range)
+    {
+        var lowerBound = SentryTime.StorageLowerBound(range);
+
+        return lowerBound == DateTime.MinValue
+            ? gmlManager.BugTracker.GetFilteredBugs(_ => true)
+            : gmlManager.BugTracker.GetFilteredBugs(c => c.Date >= lowerBound);
     }
 }
