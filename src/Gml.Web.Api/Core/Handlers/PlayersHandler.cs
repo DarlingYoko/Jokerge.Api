@@ -5,6 +5,7 @@ using Gml.Dto.Messages;
 using Gml.Dto.Player;
 using Gml.Models.User;
 using Gml.Web.Api.Core.Hubs.Controllers;
+using Gml.Web.Api.Core.Services;
 using GmlCore.Interfaces;
 using GmlCore.Interfaces.User;
 
@@ -112,7 +113,7 @@ public class PlayersHandler : IPlayersHandler
             players = await gmlManager.Users.GetUsers(take ?? 20, offset ?? 0, findName ?? string.Empty);
         }
 
-        var result = mapper.Map<List<ExtendedPlayerReadDto>>(players);
+        var result = mapper.Map<List<ExtendedPlayerReadDto>>(players).WithoutSecrets();
         foreach (var dto in result)
         {
             dto.IsLauncherStarted = playersController.GetLauncherConnection(dto.Name, out _);

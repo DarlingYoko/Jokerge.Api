@@ -491,7 +491,7 @@ public class ProfileHandler : IProfileHandler
         profileDto.Priority = profile.Priority;
         profileDto.Loader = profile.Loader;
         profileDto.RecommendedRam = profile.RecommendedRam;
-        profileDto.UsersWhiteList = mapper.Map<List<PlayerReadDto>>(whiteListPlayers);
+        profileDto.UsersWhiteList = mapper.Map<List<PlayerReadDto>>(whiteListPlayers).WithoutSecrets();
 
         return Results.Ok(ResponseMessage.Create(profileDto, string.Empty, HttpStatusCode.OK));
     }
@@ -523,7 +523,7 @@ public class ProfileHandler : IProfileHandler
         profile.UserWhiteListGuid.Add(user.Uuid);
         await gmlManager.Profiles.SaveProfiles();
 
-        var mappedUser = mapper.Map<PlayerReadDto>(user);
+        var mappedUser = mapper.Map<PlayerReadDto>(user).WithoutSecrets();
 
         return Results.Ok(ResponseMessage.Create(mappedUser, "Пользователь успешно добавлен в белый список профиля",
             HttpStatusCode.OK));

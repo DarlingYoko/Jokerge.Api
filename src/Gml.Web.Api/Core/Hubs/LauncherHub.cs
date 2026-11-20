@@ -1,3 +1,4 @@
+using System.Reactive.Concurrency;
 using Gml.Web.Api.Core.Hubs.Controllers;
 using GmlCore.Interfaces;
 using Microsoft.AspNetCore.SignalR;
@@ -20,7 +21,9 @@ public class LauncherHub : BaseHub
         _hubEvents = hubEvents;
         _playerController = playerController;
 
-        _profilesChangedEvent ??= gmlManager.Profiles.ProfilesChanged.Subscribe(_ =>
+        _profilesChangedEvent ??= ProfileChangeNotifier
+            .Coalesce(gmlManager.Profiles.ProfilesChanged, ProfileChangeNotifier.Window, DefaultScheduler.Instance)
+            .Subscribe(_ =>
         {
             foreach (var connection in _playerController.LauncherInfos.Values.Select(c => c.Connection)
                          .OfType<ISingleClientProxy>())
