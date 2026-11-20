@@ -271,6 +271,12 @@ public class TextureIntegrationHandler : ITextureIntegrationHandler
             return Results.NotFound(ResponseMessage.Create($"Пользователь с UUID: \"{userUuid}\" не найден",
                 HttpStatusCode.NotFound));
 
-        return Results.Stream(await gmlManager.Users.GetHead(user).ConfigureAwait(false));
+        var head = await gmlManager.Users.GetHead(user).ConfigureAwait(false);
+
+        // The skin service has no head for names it cannot store (e.g. Cyrillic): not a server error.
+        return head is null
+            ? Results.NotFound(ResponseMessage.Create($"Голова пользователя \"{user.Name}\" недоступна",
+                HttpStatusCode.NotFound))
+            : Results.Stream(head, "image/png");
     }
 }
