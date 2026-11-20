@@ -44,6 +44,7 @@ public static class ApplicationExtensions
         app.UseRateLimiter();
 
         app.RegisterEndpoints()
+            .MapDiagnosticsEndpoints()
             .UseCors(_policyName)
             .UseMiddleware<BadRequestExceptionMiddleware>()
             .UseMiddleware<PluginRouterMiddleware>();
@@ -222,6 +223,7 @@ public static class ApplicationExtensions
                 settings.TextureEndpoint
             )
             .ConfigureRateLimit()
+            .AddDiagnostics()
             .AddHealthChecks().Services
             .AddSingleton(settings)
             .AddSingleton<IAuthServiceFactory, AuthServiceFactory>()
