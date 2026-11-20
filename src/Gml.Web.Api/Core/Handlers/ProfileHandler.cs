@@ -362,6 +362,8 @@ public class ProfileHandler : IProfileHandler
 
         user.Manager = gmlManager;
 
+        var ram = StartupRam.Resolve(createInfoDto.RamSize);
+
         var profileInfo = await gmlManager.Profiles.GetProfileInfo(profile.Name, new StartupOptions
         {
             FullScreen = createInfoDto.IsFullScreen,
@@ -369,8 +371,8 @@ public class ProfileHandler : IProfileHandler
             ServerPort = createInfoDto.GamePort,
             ScreenHeight = createInfoDto.WindowHeight,
             ScreenWidth = createInfoDto.WindowWidth,
-            MaximumRamMb = createInfoDto.RamSize,
-            MinimumRamMb = 512,
+            MaximumRamMb = ram.MaximumMb,
+            MinimumRamMb = ram.MinimumMb,
             OsName = osName,
             OsArch = createInfoDto.OsArchitecture
         }, user);
@@ -454,6 +456,8 @@ public class ProfileHandler : IProfileHandler
             Manager = gmlManager
         };
 
+        var ram = StartupRam.Resolve(createInfoDto.RamSize);
+
         var profileInfo = await gmlManager.Profiles.GetProfileInfo(profile.Name, new StartupOptions
         {
             FullScreen = createInfoDto.IsFullScreen,
@@ -461,8 +465,8 @@ public class ProfileHandler : IProfileHandler
             ServerPort = createInfoDto.GamePort,
             ScreenHeight = createInfoDto.WindowHeight,
             ScreenWidth = createInfoDto.WindowWidth,
-            MaximumRamMb = createInfoDto.RamSize == 0 ? 1024 : createInfoDto.RamSize,
-            MinimumRamMb = 512,
+            MaximumRamMb = ram.MaximumMb,
+            MinimumRamMb = ram.MinimumMb,
             OsName = osName,
             OsArch = createInfoDto.OsArchitecture
         }, user);
