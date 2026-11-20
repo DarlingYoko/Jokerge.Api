@@ -123,6 +123,7 @@ public static class DatabaseExtensions
                 ("players.pardon", "Разблокировка игроков"),
                 ("diagnostics.view", "Просмотр отчётов диагностики, отправленных игроками из лаунчера"),
                 ("diagnostics.delete", "Удаление отчётов диагностики"),
+                ("metrics.view", "Просмотр метрик API: запросы, латентность, ошибки, нагрузка процесса"),
                 ("servers.manage", "Управление игровыми серверами через SignalR хаб"),
                 ("notifications.manage", "Управление уведомлениями через SignalR хаб")
             };

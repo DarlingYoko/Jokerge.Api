@@ -8,6 +8,7 @@ using Gml.Web.Api.Core.Hubs;
 using Gml.Web.Api.Core.Hubs.Controllers;
 using Gml.Web.Api.Core.Integrations.Auth;
 using Gml.Web.Api.Core.MappingProfiles;
+using Gml.Web.Api.Core.Metrics;
 using Gml.Web.Api.Core.Middlewares;
 using Gml.Web.Api.Core.Options;
 using Gml.Web.Api.Core.Services;
@@ -38,6 +39,7 @@ public static class ApplicationExtensions
     {
         var swaggerEnabled = bool.TryParse(GetEnvironmentVariable("SWAGGER_ENABLED"), out var isEnabled) && isEnabled;
 
+        app.UseMiddleware<RequestMetricsMiddleware>();
         app.UseForwardedHeaders(ForwardedHeadersExtension.CreateOptions());
         app.UseAuthentication();
         app.UseAuthorization();
@@ -45,6 +47,7 @@ public static class ApplicationExtensions
 
         app.RegisterEndpoints()
             .MapDiagnosticsEndpoints()
+            .MapMetricsEndpoints()
             .UseCors(_policyName)
             .UseMiddleware<BadRequestExceptionMiddleware>()
             .UseMiddleware<PluginRouterMiddleware>();
@@ -224,6 +227,7 @@ public static class ApplicationExtensions
             )
             .ConfigureRateLimit()
             .AddDiagnostics()
+            .AddPanelMetrics(builder.Configuration)
             .AddHealthChecks().Services
             .AddSingleton(settings)
             .AddSingleton<IAuthServiceFactory, AuthServiceFactory>()
