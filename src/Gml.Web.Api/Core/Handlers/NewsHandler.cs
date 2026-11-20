@@ -3,6 +3,7 @@ using AutoMapper;
 using Gml.Core.Integrations;
 using Gml.Dto.Messages;
 using Gml.Dto.News;
+using Gml.Web.Api.Core.Services;
 using GmlCore.Interfaces;
 using GmlCore.Interfaces.Enums;
 
@@ -48,9 +49,12 @@ public class NewsHandler : INewsHandler
 
     public static async Task<IResult> GetNews(IGmlManager gmlManager, IMapper mapper)
     {
-        var news = await gmlManager.Integrations.NewsProvider.GetNews();
+        var external = await gmlManager.Integrations.NewsProvider.GetNews();
+        var panel = await gmlManager.News.GetAllAsync();
 
-        return Results.Ok(ResponseMessage.Create(mapper.Map<List<NewsReadDto>>(news.ToList()), "Актуальные новости", HttpStatusCode.OK));
+        var feed = NewsFeed.Merge(mapper.Map<List<NewsReadDto>>(external.ToList()), panel);
+
+        return Results.Ok(ResponseMessage.Create(feed, "Актуальные новости", HttpStatusCode.OK));
     }
 
     public static IResult GetListeners(IGmlManager gmlManager)

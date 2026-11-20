@@ -108,6 +108,8 @@ public static class DatabaseExtensions
                 ("integrations.news.manage",
                     "Управление слушателями новостей, включая добавление, удаление и получение списка слушателей"),
                 ("integrations.news.view", "Получение списка новостей"),
+                ("news.view", "Просмотр новостей панели"),
+                ("news.manage", "Создание, изменение и удаление новостей панели"),
                 ("profiles.view", "Просмотр списка профилей и версий Minecraft"),
                 ("profiles.create", "Создание игровых профилей"),
                 ("profiles.update",

@@ -1530,6 +1530,8 @@ public static class EndpointsExtensions
 
         #endregion
 
+        app.MapPanelNewsEndpoints();
+
         return app;
     }
 }

@@ -11,5 +11,6 @@ public class NewsMapper : Profile
     {
         CreateMap<INewsData, NewsReadDto>();
         CreateMap<NewsData, NewsReadDto>();
+        CreateMap<IPanelNews, PanelNewsReadDto>();
     }
 }

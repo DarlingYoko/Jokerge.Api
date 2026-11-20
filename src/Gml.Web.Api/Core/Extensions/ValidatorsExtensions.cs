@@ -3,6 +3,7 @@ using Gml.Dto.Files;
 using Gml.Dto.Integration;
 using Gml.Dto.Launcher;
 using Gml.Dto.Mods;
+using Gml.Dto.News;
 using Gml.Dto.Profile;
 using Gml.Dto.Servers;
 using Gml.Dto.Texture;
@@ -42,6 +43,9 @@ public static class ValidatorsExtensions
             // Launcher validator
             .AddScoped<IValidator<LauncherCreateDto>, LauncherCreateDtoValidator>()
             .AddScoped<IValidator<ModsDetailsInfoDto>, ModsUpdateInfoValidator>()
+
+            // Panel news validator
+            .AddScoped<IValidator<PanelNewsWriteDto>, PanelNewsWriteDtoValidator>()
 
             // Servers validator
             .AddScoped<IValidator<CreateServerDto>, CreateServerDtoValidator>()
